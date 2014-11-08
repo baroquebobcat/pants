@@ -28,7 +28,8 @@ function die() {
 
 function venv_dir() {
   if [ ! -z "${PANTS_DEV}" ]; then
-    echo ${REPO_ROOT}/build-support/pants_dev_deps.venv
+    default=${REPO_ROOT}/build-support/pants_dev_deps.venv
+    echo ${PANTS_VENV:-$default}
   else
     echo ${REPO_ROOT}/build-support/pants_deps.venv
   fi
