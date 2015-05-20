@@ -13,6 +13,7 @@ from collections import defaultdict
 
 from twitter.common.collections import OrderedSet
 
+from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.jvm_compile_strategy import JvmCompileStrategy
 from pants.backend.jvm.tasks.jvm_compile.jvm_dependency_analyzer import JvmDependencyAnalyzer
 from pants.backend.jvm.tasks.jvm_compile.resource_mapping import ResourceMapping
@@ -201,6 +202,11 @@ class JvmCompileGlobalStrategy(JvmCompileStrategy):
 
     return (self._partition_size_hint, locally_changed_targets)
 
+  def _compute_extra_classpath_paths(self, extra_compile_time_classpath_elements):
+    extra_classpath_tuples = self._compute_extra_classpath(extra_compile_time_classpath_elements)
+    extra_classpath_paths = ClasspathUtil._just_paths(extra_classpath_tuples)
+    return extra_classpath_paths
+
   def compile_chunk(self,
                     invalidation_check,
                     all_targets,
@@ -226,13 +232,14 @@ class JvmCompileGlobalStrategy(JvmCompileStrategy):
     # NB: The global strategy uses the aggregated classpath (for all targets) to compile each
     # chunk, which avoids needing to introduce compile-time dependencies between annotation
     # processors and the classes they annotate.
-    compile_classpath = compile_classpaths.get_for_targets(all_targets)
-    compile_classpath = OrderedSet(
-      self._compute_extra_classpath(extra_compile_time_classpath_elements) + list(compile_classpath))
+    all_targets_compile_classpath = ClasspathUtil.classpath_entries(all_targets, compile_classpaths,
+                                                                    self._confs)
 
-    # Validate that all classpath entries are located within the working copy, which
-    # simplifies relativizing the analysis files.
-    self._validate_classpath(compile_classpath)
+    extra_classpath_paths = self._compute_extra_classpath_paths(
+      extra_compile_time_classpath_elements)
+
+    compile_classpath = OrderedSet(list(all_targets_compile_classpath) +
+                                   extra_classpath_paths)
 
     # Find the invalid sources for this chunk.
     invalid_sources_by_target = {t: self._sources_for_target(t) for t in invalid_targets}
@@ -269,7 +276,6 @@ class JvmCompileGlobalStrategy(JvmCompileStrategy):
     # Now compile partitions one by one.
     for partition_index, partition in enumerate(partitions):
       (vts, sources, analysis_file) = partition
-      cp_entries = [entry for conf, entry in compile_classpath if conf in self._confs]
 
       progress_message = 'partition {} of {}'.format(partition_index + 1, len(partitions))
       # We have to treat the global output dir as an upstream element, so compilers can
@@ -281,7 +287,7 @@ class JvmCompileGlobalStrategy(JvmCompileStrategy):
                   sources,
                   analysis_file,
                   upstream_analysis,
-                  cp_entries,
+                  compile_classpath,
                   self._classes_dir,
                   progress_message)
 

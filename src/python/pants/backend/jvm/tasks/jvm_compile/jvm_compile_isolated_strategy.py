@@ -9,6 +9,7 @@ import os
 from collections import defaultdict
 from contextlib import contextmanager
 
+from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph,
                                                                  Job)
 from pants.backend.jvm.tasks.jvm_compile.jvm_compile_strategy import JvmCompileStrategy
@@ -112,17 +113,25 @@ class JvmCompileIsolatedStrategy(JvmCompileStrategy):
         classes_by_src[relsrc] = classes
     return classes_by_src_by_context
 
-  def _compute_classpath_entries(self, compile_classpaths, compile_context,
+  def _compute_classpath_entries(self, compile_classpaths,
+                                 target_closure,
+                                 compile_context,
                                  extra_compile_time_classpath):
     # Generate a classpath specific to this compile and target, and include analysis
     # for upstream targets.
-    raw_compile_classpath = compile_classpaths.get_for_target(compile_context.target)
-    compile_classpath = extra_compile_time_classpath + list(raw_compile_classpath)
-    # Validate that the classpath is located within the working copy, which simplifies
-    # relativizing the analysis files.
-    self._validate_classpath(compile_classpath)
-    # Filter the final classpath and gather upstream analysis.
-    return [entry for conf, entry in compile_classpath if conf in self._confs]
+    classpath_for_target = ClasspathUtil.classpath_entries_for_target(compile_context.target,
+                                                                      compile_classpaths,
+                                                                      confs=self._confs,
+                                                                      target_closure=target_closure)
+
+    extra_compiletime_classpath_paths = ClasspathUtil. \
+      _filter_classpath_and_include_only_paths(extra_compile_time_classpath, [], self._confs)
+    ClasspathUtil._validate_classpath_paths(extra_compile_time_classpath)
+
+    compile_classpath = classpath_for_target + \
+                        extra_compiletime_classpath_paths
+
+    return compile_classpath
 
   def exec_graph_key_for_target(self, compile_target):
     return "compile-{}".format(compile_target.address.spec)
@@ -142,7 +151,8 @@ class JvmCompileIsolatedStrategy(JvmCompileStrategy):
         safe_delete(compile_context.analysis_file)
       raise
 
-  def _create_compile_jobs(self, compile_classpaths, compile_contexts, extra_compile_time_classpath,
+  def _create_compile_jobs(self, compile_classpaths,
+                           compile_contexts, extra_compile_time_classpath,
                      invalid_targets, invalid_vts_partitioned,  compile_vts, register_vts,
                      update_artifact_cache_vts_work):
     def create_work_for_vts(vts, compile_context, target_closure):
@@ -150,7 +160,9 @@ class JvmCompileIsolatedStrategy(JvmCompileStrategy):
         progress_message = vts.targets[0].address.spec
         upstream_analysis = dict(self._upstream_analysis(compile_contexts,
                                                          target_closure))
-        cp_entries = self._compute_classpath_entries(compile_classpaths, compile_context,
+        cp_entries = self._compute_classpath_entries(compile_classpaths,
+                                                     target_closure,
+                                                     compile_context,
                                                      extra_compile_time_classpath)
         with self._empty_analysis_cleanup(compile_context):
           compile_vts(vts,
