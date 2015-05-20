@@ -7,6 +7,8 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 import os
 
+from twitter.common.collections import OrderedSet
+
 from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.base.build_environment import get_buildroot
@@ -14,6 +16,39 @@ from pants.base.exceptions import TaskError
 
 
 class ClasspathUtil(object):
+
+  @staticmethod
+  def compute_classpath(all_targets, extra_classpath_tuples, products, confs):
+    extra_classpath_paths = ClasspathUtil._just_paths(extra_classpath_tuples)
+    compile_classpaths = products.get_data('compile_classpath')
+    all_targets_compile_classpath = ClasspathUtil.classpath_entries(all_targets, compile_classpaths,
+                                                                    confs)
+    compile_classpath = OrderedSet(list(all_targets_compile_classpath) +
+                                   extra_classpath_paths)
+    return list(compile_classpath)
+
+  @staticmethod
+  def compute_classpath_for_target(compile_classpaths, target, extra_compile_time_classpath,
+                          target_closure,
+                          confs):
+    classpath_for_target = ClasspathUtil.classpath_entries_for_target(target,
+                                                                      compile_classpaths,
+                                                                      confs=confs,
+                                                                      target_closure=target_closure)
+
+    #compile_classpath = compile_classpaths.get_for_targets(targets)
+    #exclude_patterns = ClasspathUtil._exclude_patterns(targets)
+    #paths = ClasspathUtil._filter_classpath_and_include_only_paths(compile_classpath,
+    #                                                               exclude_patterns, confs)
+    #ClasspathUtil._validate_classpath_paths(paths)
+
+
+    extra_compiletime_classpath_paths = ClasspathUtil. \
+      _filter_classpath_and_include_only_paths(extra_compile_time_classpath, [], confs)
+    ClasspathUtil._validate_classpath_paths(extra_compile_time_classpath)
+    compile_classpath = classpath_for_target + \
+                        extra_compiletime_classpath_paths
+    return list(compile_classpath)
 
   @staticmethod
   def classpath_entries_for_target(target, compile_classpaths, confs, target_closure=None):
