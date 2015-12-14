@@ -147,6 +147,50 @@ class ThreadSafeCounter(object):
       self._counter -= 1
 
 
+class WorkerPoolExecutor(object):
+  def __init__(self, worker_pool):
+    self.pool = worker_pool
+    self.finished_queue = queue.Queue()
+    self.jobs_in_flight = ThreadSafeCounter()
+    self._timeout = 10
+
+  def next_result(self):
+    """None if it times out"""
+    try:
+      return self.finished_queue.get(timeout=self._timeout)
+    except queue.Empty:
+      return None
+
+  def add_to_finished_queue(self, result):
+    self.finished_queue.put(result)
+
+  def dec_jobs_in_flight(self):
+    self.jobs_in_flight.decrement()
+
+  def has_capacity(self):
+    return self.jobs_in_flight.get() < self.pool.num_workers
+
+  def start_job(self, job):
+    self.jobs_in_flight.increment()
+    self.pool.submit_async_work(self.work_from_job(job))
+
+  def work_from_job(self, job):
+    """"""
+    def worker(worker_key, work):
+      try:
+        work()
+        result = (worker_key, SUCCESSFUL, None)
+      except Exception as e:
+        result = (worker_key, FAILED, e)
+      self.add_to_finished_queue(result)
+      self.dec_jobs_in_flight()
+
+    return Work(worker, [(job.key, (job))])
+
+  def cancel_job(self, dependee):
+    self.add_to_finished_queue((dependee, CANCELED, None))
+
+
 class ExecutionGraph(object):
   """A directed acyclic graph of work to execute.
 
@@ -246,34 +290,22 @@ class ExecutionGraph(object):
       re-raises
     """
     log.debug(self.format_dependee_graph())
+    executor = WorkerPoolExecutor(pool)
 
     status_table = StatusTable(self._job_keys_as_scheduled,
                                {key: len(self._jobs[key].dependencies) for key in self._job_keys_as_scheduled})
-    finished_queue = queue.Queue()
 
     heap = []
-    jobs_in_flight = ThreadSafeCounter()
-
     def put_jobs_into_heap(job_keys):
       for job_key in job_keys:
         # minus because jobs with larger priority should go first
         heappush(heap, (-self._job_priority[job_key], job_key))
 
     def try_to_submit_jobs_from_heap():
-      def worker(worker_key, work):
-        try:
-          work()
-          result = (worker_key, SUCCESSFUL, None)
-        except Exception as e:
-          result = (worker_key, FAILED, e)
-        finished_queue.put(result)
-        jobs_in_flight.decrement()
-
-      while len(heap) > 0 and jobs_in_flight.get() < pool.num_workers:
+      while len(heap) > 0 and executor.has_capacity():
         priority, job_key = heappop(heap)
-        jobs_in_flight.increment()
         status_table.mark_queued(job_key)
-        pool.submit_async_work(Work(worker, [(job_key, (self._jobs[job_key]))]))
+        executor.start_job(self._jobs[job_key])
 
     def submit_jobs(job_keys):
       put_jobs_into_heap(job_keys)
@@ -283,13 +315,14 @@ class ExecutionGraph(object):
       submit_jobs(self._job_keys_with_no_dependencies)
 
       while not status_table.are_all_done():
-        try:
-          finished_key, result_status, value = finished_queue.get(timeout=10)
-        except queue.Empty:
+        result = executor.next_result()
+        if not result:
           log.debug("Waiting on \n  {}\n".format("\n  ".join(
             "{}: {}".format(key, state) for key, state in status_table.unfinished_items())))
           try_to_submit_jobs_from_heap()
           continue
+        else:
+          finished_key, result_status, value = result
 
         finished_job = self._jobs[finished_key]
         direct_dependees = self._dependees[finished_key]
@@ -321,7 +354,7 @@ class ExecutionGraph(object):
           for dependee in direct_dependees:
             if status_table.is_unstarted(dependee):
               status_table.mark_queued(dependee)
-              finished_queue.put((dependee, CANCELED, None))
+              executor.cancel_job(dependee)
 
         # Log success or failure for this job.
         if result_status is FAILED:
