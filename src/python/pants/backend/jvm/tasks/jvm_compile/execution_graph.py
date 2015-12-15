@@ -147,7 +147,23 @@ class ThreadSafeCounter(object):
       self._counter -= 1
 
 
-class WorkerPoolExecutor(object):
+class Executor(object):
+  """Defines the executor inferface for the execution graph."""
+
+  def next_result(self):
+    """Returns the result of a finished job, if it times out, it returns None"""
+
+  def has_capacity(self):
+    """True when new jobs can be added."""
+
+  def cancel_job(self, job_key):
+    """Adds canceled result for job to result queue."""
+
+  def start_job(self, job):
+    """Schedules a job to be executed."""
+
+
+class WorkerPoolExecutor(Executor):
   def __init__(self, worker_pool):
     self.pool = worker_pool
     self.finished_queue = queue.Queue()
@@ -289,9 +305,13 @@ class ExecutionGraph(object):
       aborts work pool
       re-raises
     """
-    log.debug(self.format_dependee_graph())
-    executor = WorkerPoolExecutor(pool)
 
+    executor = WorkerPoolExecutor(pool)
+    self._execute_with_executor(executor, log)
+
+  def _execute_with_executor(self, executor, log):
+
+    log.debug(self.format_dependee_graph())
     status_table = StatusTable(self._job_keys_as_scheduled,
                                {key: len(self._jobs[key].dependencies) for key in self._job_keys_as_scheduled})
 

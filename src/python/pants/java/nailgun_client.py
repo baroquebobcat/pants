@@ -21,6 +21,95 @@ from pants.util.socket import RecvBufferedSocket
 logger = logging.getLogger(__name__)
 
 
+class AsyncNailgunSession(NailgunProtocol):
+  """Handles a single nailgun client session."""
+
+  BUF_SIZE = 8192
+
+  def __init__(self, sock, in_fd, out_fd, err_fd):
+    self._sock = sock
+    #self._input_reader = NailgunStreamReader(in_fd, self._sock, self.BUF_SIZE) if in_fd else None
+    self._in_fd = in_fd
+    self._stdout = out_fd
+    self._stderr = err_fd
+    self._in_fd_errored = False
+    self.stopped = False
+    self.exit_code = None
+
+  def readable_fds(self):
+    return [self._in_fd, self._sock]
+
+  def writeable_fds(self):
+    return []
+
+  def exceptional_fds(self):
+    return [self._in_fd, self._sock]
+
+  def on_errored(self, i):
+    # TODO should do something better
+    if i == 0:
+      print('stdin failed!')
+      self._in_fd_errored = True
+    elif i == 1:
+      print('nailgun socket failed')
+
+  def on_readable(self, i):
+    if i == 0:
+      if self._in_fd_errored:
+        # bail if errors
+        return
+
+      data = os.read(self._in_fd.fileno(), self._buf_size)
+      if data:
+        NailgunProtocol.write_chunk(self._sock, ChunkType.STDIN, data)
+      else:
+        NailgunProtocol.write_chunk(self._sock, ChunkType.STDIN_EOF)
+        try:
+          self._sock.shutdown(socket.SHUT_WR)  # Shutdown socket sends.
+        except socket.error:  # Can happen if response is quick.
+          pass
+        finally:
+          self.stopped = True
+    elif i == 1:
+      result = self._process_chunk(NailgunProtocol.read_chunk(self._sock))
+      if result is not None:
+        self.exit_code = result
+  #@contextmanager
+  #def _maybe_input_reader_running(self):
+  #  if self._input_reader: self._input_reader.start()
+  #  yield
+  #  if self._input_reader: self._input_reader.stop()
+
+  def _process_chunk(self, chunk_type, payload):
+    if chunk_type == ChunkType.STDOUT:
+      self._stdout.write(payload)
+      self._stdout.flush()
+    elif chunk_type == ChunkType.STDERR:
+      self._stderr.write(payload)
+      self._stderr.flush()
+    elif chunk_type == ChunkType.EXIT:
+      self._stdout.flush()
+      self._stderr.flush()
+      return int(payload)
+    else:
+      raise self.ProtocolError('Received unexpected chunk {} -> {}'.format(chunk_type, payload))
+
+  def _process_session(self):
+    """Process the outputs of the nailgun session."""
+    for chunk_type, payload in self.iter_chunks(self._sock):
+      r = self._process_chunk(chunk_type, payload)
+      if r is not None:
+        return r
+
+  def execute(self, working_dir, main_class, *arguments, **environment):
+    # Send the nailgun request.
+    self.send_request(self._sock, working_dir, main_class, *arguments, **environment)
+
+    # Launch the NailgunStreamReader if applicable and process the remainder of the nailgun session.
+    with self._maybe_input_reader_running():
+      return self._process_session()
+
+
 class NailgunClientSession(NailgunProtocol):
   """Handles a single nailgun client session."""
 
@@ -115,6 +204,33 @@ class NailgunClient(object):
       return sock
 
   def execute(self, main_class, cwd=None, *args, **environment):
+    """Executes the given main_class with any supplied args in the given environment.
+
+    :param string main_class: the fully qualified class name of the main entrypoint
+    :param string cwd: Set the working directory for this command
+    :param list args: any arguments to pass to the main entrypoint
+    :param dict environment: an env mapping made available to native nails via the nail context
+    :returns: the exit code of the main_class.
+    """
+    environment = dict(self.ENV_DEFAULTS.items() + environment.items())
+    cwd = cwd or self._workdir
+
+    # N.B. This can throw NailgunConnectionError (catchable via NailgunError).
+    sock = self.try_connect()
+
+    session = NailgunClientSession(sock, self._stdin, self._stdout, self._stderr)
+    try:
+      return session.execute(cwd, main_class, *args, **environment)
+    except socket.error as e:
+      raise self.NailgunError('Problem communicating with nailgun server at {}:{}: {!r}'
+                              .format(self._host, self._port, e))
+    except session.ProtocolError as e:
+      raise self.NailgunError('Problem in nailgun protocol with nailgun server at {}:{}: {!r}'
+                              .format(self._host, self._port, e))
+    finally:
+      sock.close()
+
+  def execute_async(self, main_class, cwd=None, *args, **environment):
     """Executes the given main_class with any supplied args in the given environment.
 
     :param string main_class: the fully qualified class name of the main entrypoint

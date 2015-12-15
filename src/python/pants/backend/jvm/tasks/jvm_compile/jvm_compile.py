@@ -17,8 +17,8 @@ from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.compile_context import CompileContext
-from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph,
-                                                                 Job)
+from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph, Executor,
+                                                                 Job, WorkerPoolExecutor)
 from pants.backend.jvm.tasks.nailgun_task import NailgunTaskBase
 from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
@@ -32,6 +32,51 @@ from pants.option.custom_types import list_option
 from pants.reporting.reporting_utils import items_to_report_element
 from pants.util.dirutil import fast_relpath, safe_delete, safe_mkdir, safe_walk
 from pants.util.fileutil import create_size_estimators
+
+
+#---------------------------------------------------------------------------------------
+class NailyExecutor(Executor):
+  """"""
+
+  def __init__(self):
+    self._max_jobs = 8
+    self._currently_running_jobs = []
+
+  def next_result(self):
+    #look at select ...
+    pass
+
+  def has_capacity(self):
+    """True when new jobs can be added."""
+
+  def cancel_job(self, job_key):
+    """Adds canceled result for job to result queue."""
+
+  def start_job(self, job):
+    """Schedules a job to be executed."""
+
+
+class NailyJob(object):
+  """"""
+
+  # need
+  # - ability to do a cache check and skip
+  # - start nailgun / process in a way that we can wait via select for results
+  # takes a fn that returns file descriptors to watch
+  # - pre-run code
+  # - jvm command cfg
+  # - post?
+  # some state methods
+  # - started
+  # - file descriptor
+  # - etc
+  def __init__(self, key, before_shellout, cmd_cfg, dependencies, size=0, on_success=None, on_failure=None):
+    super(NailyJob, self).__init__(key, None, dependencies, size, on_success, on_failure)
+
+
+class NailyWorkInProgress(object):
+  pass
+#---------------------------------------------------------------------------------------
 
 
 class ResolvedJarAwareTaskIdentityFingerprintStrategy(TaskIdentityFingerprintStrategy):
@@ -343,10 +388,11 @@ class JvmCompile(NailgunTaskBase):
       # This uses workunit.parent as the WorkerPool's parent so that child workunits
       # of different pools will show up in order in the html output. This way the current running
       # workunit is on the bottom of the page rather than possibly in the middle.
-      self._worker_pool = WorkerPool(workunit.parent,
+      self._worker_executor = WorkerPoolExecutor(WorkerPool(workunit.parent,
                                      self.context.run_tracker,
                                      self._worker_count)
-
+      )
+      
 
 
     classpath_product = self.context.products.get_data('runtime_classpath')
@@ -416,7 +462,7 @@ class JvmCompile(NailgunTaskBase):
 
     exec_graph = ExecutionGraph(jobs)
     try:
-      exec_graph.execute(self._worker_pool, self.context.log)
+      exec_graph._execute_with_executor(self._worker_executor, self.context.log)
     except ExecutionFailure as e:
       raise TaskError("Compilation failure: {}".format(e))
 
@@ -639,55 +685,61 @@ class JvmCompile(NailgunTaskBase):
         return True
       return os.path.exists(compile_context.analysis_file)
 
-    def work_for_vts(vts, compile_context):
+
+    def no_cache_hit(vts, compile_context):
+      # Compute the compile classpath for this target.
+      cp_entries = self._compute_classpath_entries(classpath_products,
+                                                   compile_context,
+                                                   extra_compile_time_classpath)
+      # TODO: always provide transitive analysis, but not always all classpath entries?
+      upstream_analysis = dict(self._upstream_analysis(compile_contexts, cp_entries))
+
+      # Write analysis to a temporary file, and move it to the final location on success.
+      tmp_analysis_file = "{}.tmp".format(compile_context.analysis_file)
+      if should_compile_incrementally(vts):
+        # If this is an incremental compile, rebase the analysis to our new classes directory.
+        self._analysis_tools.rebase_from_path(compile_context.analysis_file,
+                                              tmp_analysis_file,
+                                              vts.previous_results_dir,
+                                              vts.results_dir)
+      else:
+        # Otherwise, simply ensure that it is empty.
+        safe_delete(tmp_analysis_file)
+
+      target, = vts.targets
+      fatal_warnings = self._compute_language_property(target, lambda x: x.fatal_warnings)
       progress_message = compile_context.target.address.spec
 
       # Capture a compilation log if requested.
       log_file = compile_context.log_file if self._capture_log else None
+      self._compile_vts(vts,
+                        compile_context.sources,
+                        tmp_analysis_file,
+                        upstream_analysis,
+                        cp_entries,
+                        compile_context.classes_dir,
+                        log_file,
+                        progress_message,
+                        target.platform,
+                        fatal_warnings,
+                        counter)
+      post_compile(tmp_analysis_file, compile_context)
 
+    def post_compile(tmp_analysis_file, compile_context):
+      os.rename(tmp_analysis_file, compile_context.analysis_file)
+      self._analysis_tools.relativize(compile_context.analysis_file, compile_context.portable_analysis_file)
+
+      # Write any additional resources for this target to the target workdir.
+      self.write_extra_resources(compile_context)
+
+      # Jar the compiled output.
+      self._create_context_jar(compile_context)
+
+    def work_for_vts(vts, compile_context):
       # Double check the cache before beginning compilation
       hit_cache = check_cache(vts)
-
       if not hit_cache:
-        # Compute the compile classpath for this target.
-        cp_entries = self._compute_classpath_entries(classpath_products,
-                                                     compile_context,
-                                                     extra_compile_time_classpath)
-        # TODO: always provide transitive analysis, but not always all classpath entries?
-        upstream_analysis = dict(self._upstream_analysis(compile_contexts, cp_entries))
-
-        # Write analysis to a temporary file, and move it to the final location on success.
-        tmp_analysis_file = "{}.tmp".format(compile_context.analysis_file)
-        if should_compile_incrementally(vts):
-          # If this is an incremental compile, rebase the analysis to our new classes directory.
-          self._analysis_tools.rebase_from_path(compile_context.analysis_file,
-                                                tmp_analysis_file,
-                                                vts.previous_results_dir,
-                                                vts.results_dir)
-        else:
-          # Otherwise, simply ensure that it is empty.
-          safe_delete(tmp_analysis_file)
-        target, = vts.targets
-        fatal_warnings = fatal_warnings = self._compute_language_property(target, lambda x: x.fatal_warnings)
-        self._compile_vts(vts,
-                          compile_context.sources,
-                          tmp_analysis_file,
-                          upstream_analysis,
-                          cp_entries,
-                          compile_context.classes_dir,
-                          log_file,
-                          progress_message,
-                          target.platform,
-                          fatal_warnings,
-                          counter)
-        os.rename(tmp_analysis_file, compile_context.analysis_file)
-        self._analysis_tools.relativize(compile_context.analysis_file, compile_context.portable_analysis_file)
-
-        # Write any additional resources for this target to the target workdir.
-        self.write_extra_resources(compile_context)
-
-        # Jar the compiled output.
-        self._create_context_jar(compile_context)
+        no_cache_hit(vts, compile_context)
 
       # Update the products with the latest classes.
       self._register_vts([compile_context])
