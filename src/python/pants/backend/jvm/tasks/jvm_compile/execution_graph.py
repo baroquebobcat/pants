@@ -158,9 +158,13 @@ class Executor(object):
 
   def cancel_job(self, job_key):
     """Adds canceled result for job to result queue."""
+    self._add_to_finished_queue((dependee, CANCELED, None))
 
   def start_job(self, job):
     """Schedules a job to be executed."""
+
+  def _add_to_finished_queue(self, result):
+    """Adds a finished result to the finish result queue."""
 
 
 class WorkerPoolExecutor(Executor):
@@ -177,7 +181,7 @@ class WorkerPoolExecutor(Executor):
     except queue.Empty:
       return None
 
-  def add_to_finished_queue(self, result):
+  def _add_to_finished_queue(self, result):
     self.finished_queue.put(result)
 
   def dec_jobs_in_flight(self):
@@ -198,13 +202,10 @@ class WorkerPoolExecutor(Executor):
         result = (worker_key, SUCCESSFUL, None)
       except Exception as e:
         result = (worker_key, FAILED, e)
-      self.add_to_finished_queue(result)
+      self._add_to_finished_queue(result)
       self.dec_jobs_in_flight()
 
     return Work(worker, [(job.key, (job))])
-
-  def cancel_job(self, dependee):
-    self.add_to_finished_queue((dependee, CANCELED, None))
 
 
 class ExecutionGraph(object):

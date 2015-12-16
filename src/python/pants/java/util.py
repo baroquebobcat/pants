@@ -20,6 +20,74 @@ from pants.util.dirutil import safe_mkdir, safe_mkdtemp
 logger = logging.getLogger(__name__)
 
 
+def async_execute_java(classpath, main, jvm_options=None, args=None, executor=None,
+                 workunit_factory=None, workunit_name=None, workunit_labels=None,
+                 cwd=None, workunit_log_config=None, distribution=None,
+                 create_synthetic_jar=True, synthetic_jar_dir=None):
+  executor = executor or SubprocessExecutor(distribution)
+  if not isinstance(executor, Executor):
+    raise ValueError('The executor argument must be a java Executor instance, give {} of type {}'
+                     .format(executor, type(executor)))
+
+  workunit_name = workunit_name or main
+
+  safe_cp = classpath
+  if create_synthetic_jar:
+    safe_cp = safe_classpath(classpath, synthetic_jar_dir)
+    logger.debug('Bundling classpath {} into {}'.format(':'.join(classpath), safe_cp))
+
+  runner = executor.async_runner(safe_cp, main, args=args, jvm_options=jvm_options, cwd=cwd)
+
+  return execute_runner_async(runner,
+                        workunit_factory=workunit_factory,
+                        workunit_name=workunit_name,
+                        workunit_labels=workunit_labels,
+                        cwd=cwd,
+                        workunit_log_config=workunit_log_config)
+
+
+
+def execute_runner_async(runner, workunit_factory=None, workunit_name=None, workunit_labels=None,
+                   cwd=None, workunit_log_config=None):
+  """Executes the given java runner.
+
+  If `workunit_factory` is supplied, does so in the context of a workunit.
+
+  :param runner: the java runner to run
+  :param workunit_factory: an optional callable that can produce a workunit context
+  :param string workunit_name: an optional name for the work unit; defaults to the main
+  :param list workunit_labels: an optional sequence of labels for the work unit
+  :param string cwd: optionally set the working directory
+  :param WorkUnit.LogConfig workunit_log_config: an optional tuple of task options affecting reporting
+
+  Returns the wip runner
+  Raises `pants.java.Executor.Error` if there was a problem launching java itself.
+  """
+  if not isinstance(runner, Executor.Runner):
+    raise ValueError('The runner argument must be a java Executor.Runner instance, '
+                     'given {} of type {}'.format(runner, type(runner)))
+
+  if workunit_factory is None:
+    wip = runner.run_async(cwd=cwd)
+    #workunit.set_outcome(WorkUnit.FAILURE if ret else WorkUnit.SUCCESS)
+    return wip
+
+  else:
+    workunit_labels = [
+        WorkUnitLabel.TOOL,
+        WorkUnitLabel.NAILGUN if isinstance(runner.executor, NailgunExecutor) else WorkUnitLabel.JVM
+    ] + (workunit_labels or [])
+
+    #with workunit_factory(name=workunit_name, labels=workunit_labels,
+    #                      cmd=runner.cmd, log_config=workunit_log_config) as starting_workunit:
+    workunit = workunit_factory(name=workunit_name, labels=workunit_labels,
+                          cmd=runner.cmd, log_config=workunit_log_config)
+    wip = runner.run_async(stdout=workunit.output('stdout'), stderr=workunit.output('stderr'), cwd=cwd, workunit=workunit)
+    #workunit.set_outcome(WorkUnit.FAILURE if ret else WorkUnit.SUCCESS)
+    return wip
+
+
+
 def execute_java(classpath, main, jvm_options=None, args=None, executor=None,
                  workunit_factory=None, workunit_name=None, workunit_labels=None,
                  cwd=None, workunit_log_config=None, distribution=None,

@@ -9,15 +9,17 @@ import functools
 import hashlib
 import itertools
 import os
-from collections import defaultdict
+import select
+from collections import defaultdict, deque
 
+from pants.java import util
 from pants.backend.jvm.subsystems.java import Java
 from pants.backend.jvm.subsystems.jvm_platform import JvmPlatform
 from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.compile_context import CompileContext
-from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph, Executor,
+from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph, Executor, SUCCESSFUL, FAILED,
                                                                  Job, WorkerPoolExecutor)
 from pants.backend.jvm.tasks.nailgun_task import NailgunTaskBase
 from pants.base.build_environment import get_buildroot
@@ -38,25 +40,77 @@ from pants.util.fileutil import create_size_estimators
 class NailyExecutor(Executor):
   """"""
 
-  def __init__(self):
-    self._max_jobs = 8
+  def __init__(self, workunit_parent,
+                                     run_tracker,
+                                     worker_count):
+    self._run_tracker = run_tracker
+    self._max_jobs = worker_count
     self._currently_running_jobs = []
+    self._job_results = deque()
 
   def next_result(self):
     #look at select ...
-    pass
+    if len(self._job_results) > 0:
+      return self._job_results.popleft()
+    else:
+      # spend some time selecting, then try for another job result
+      read = [x for job in self._currently_running_jobs for x in job.readables if x]
+      write = [x for job in self._currently_running_jobs for x in job.writables if x]
+      exception = [x for job in self._currently_running_jobs for x in job.exceptionables if x]
+      print('read {}'.format(read))
+      print('write {}'.format(write))
+      print('exception {}'.format(exception))
+      read, write, exception = select.select(read, write, exception, 10)
+      print('----------after select----------')
+      print('read {}'.format(read))
+      print('write {}'.format(write))
+      print('exception {}'.format(exception))
+
+      # collate file handles
+      args_by_job = {job: [[],[],[]] for job in self._currently_running_jobs}
+      def add_blah(x, arg_index):
+        for xable in x:
+          owning_job = next((job for job in self._currently_running_jobs if xable in job.files), None)
+          if owning_job:
+            args_by_job[owning_job][arg_index].append(xable)
+      add_blah(read, 0)
+      add_blah(write, 1)
+      add_blah(exception, 2)
+
+      # handle IO
+      for job, args in args_by_job.items():
+        print('job {}'.format(job))
+        print('  files {}'.format(job.files))
+        print('args {}'.format(args))
+        job.on_io(*args)
+        if job.is_done:
+          self._currently_running_jobs.remove(job)
+          self._add_to_finished_queue(job.result)
+
+      # check for any finished jobs, and return one if there is one
+      # not strictly necessary
+      if len(self._job_results) > 0:
+        return self._job_results.popleft()
+      else:
+        return None
+    
+      
 
   def has_capacity(self):
     """True when new jobs can be added."""
-
-  def cancel_job(self, job_key):
-    """Adds canceled result for job to result queue."""
+    return len(self._currently_running_jobs) <= self._max_jobs
 
   def start_job(self, job):
     """Schedules a job to be executed."""
+    if not self.has_capacity():
+      raise Exception("not enough capacity to schedule {}".format(job))
+    self._currently_running_jobs.append(job)
+    job.start()
 
+  def _add_to_finished_queue(self, result):
+    self._job_results.append(result)
 
-class NailyJob(object):
+class NailyJob(Job):
   """"""
 
   # need
@@ -70,12 +124,35 @@ class NailyJob(object):
   # - started
   # - file descriptor
   # - etc
-  def __init__(self, key, before_shellout, cmd_cfg, dependencies, size=0, on_success=None, on_failure=None):
-    super(NailyJob, self).__init__(key, None, dependencies, size, on_success, on_failure)
+  def __init__(self, key, before_shellout, dependencies, size=0, on_success=None, on_failure=None):
+    super(NailyJob, self).__init__(key, before_shellout, dependencies, size, on_success, on_failure)
 
 
-class NailyWorkInProgress(object):
-  pass
+  def start(self):
+    # TODO something with workunits perhaps, perhaps not. Maybe they should have already been setup
+
+    async_java_run = self.fn()
+    self._async_java_run = async_java_run
+    # hand wave starting async nailgun jobbins
+    self.files = async_java_run.files
+    self.readables = async_java_run.readables
+    self.writables = async_java_run.writables
+    self.exceptionables = async_java_run.exceptionables
+    self.is_done = False
+    #raise Exception("dunno yet {}".format(nailgun_args))
+
+  def on_io(self, read, write, err):
+    self._async_java_run.on_io(read, write, err)
+    if self._async_java_run.done:
+      self.is_done = True
+      if self._async_java_run.exit_code == 0:
+        self.result = (self.key, SUCCESSFUL, None)
+      else:
+        # TODO reporting--errors will be swallowed rn
+        self.result = (self.key, FAILED, TaskError('Compilation failed.'))
+    # when done, set self.result, self.is_done
+
+
 #---------------------------------------------------------------------------------------
 
 
@@ -282,6 +359,28 @@ class JvmCompile(NailgunTaskBase):
     """
     raise NotImplementedError()
 
+
+  def async_compile(self, args, classpath, sources, classes_output_dir, upstream_analysis, analysis_file,
+              log_file, settings, fatal_warnings):
+    """Return the args for invoking the compiler
+
+    Must raise TaskError on compile failure.
+
+    Subclasses must implement.
+    :param list args: Arguments to the compiler (such as jmake or zinc).
+    :param list classpath: List of classpath entries.
+    :param list sources: Source files.
+    :param str classes_output_dir: Where to put the compiled output.
+    :param upstream_analysis:
+    :param analysis_file: Where to write the compile analysis.
+    :param log_file: Where to write logs.
+    :param JvmPlatformSettings settings: platform settings determining the -source, -target, etc for
+      javac to use.
+    :param fatal_warnings: whether to convert compilation warnings to errors.
+    """
+    raise NotImplementedError()
+
+
   # Subclasses may override.
   # ------------------------
   def extra_compile_time_classpath_elements(self):
@@ -388,10 +487,11 @@ class JvmCompile(NailgunTaskBase):
       # This uses workunit.parent as the WorkerPool's parent so that child workunits
       # of different pools will show up in order in the html output. This way the current running
       # workunit is on the bottom of the page rather than possibly in the middle.
-      self._worker_executor = WorkerPoolExecutor(WorkerPool(workunit.parent,
+      self._worker_executor = NailyExecutor(workunit.parent,
+      #self._worker_executor = WorkerPoolExecutor(WorkerPool(workunit.parent,
                                      self.context.run_tracker,
                                      self._worker_count)
-      )
+      #)
       
 
 
@@ -503,6 +603,45 @@ class JvmCompile(NailgunTaskBase):
         # classfiles. So we force-invalidate here, to be on the safe side.
         vts.force_invalidate()
         self.compile(self._args, classpath, sources, outdir, upstream_analysis, analysis_file,
+                     log_file, settings, fatal_warnings)
+
+  def _async_compile_vts(self, vts, sources, analysis_file, upstream_analysis, classpath, outdir,
+                   log_file, progress_message, settings, fatal_warnings, counter):
+    """Compiles sources for the given vts into the given output dir.
+
+    vts - versioned target set
+    sources - sources for this target set
+    analysis_file - the analysis file to manipulate
+    classpath - a list of classpath entries
+    outdir - the output dir to send classes to
+
+    May be invoked concurrently on independent target sets.
+
+    Postcondition: The individual targets in vts are up-to-date, as if each were
+                   compiled individually.
+    """
+    if not sources:
+      self.context.log.warn('Skipping {} compile for targets with no sources:\n  {}'
+                            .format(self.name(), vts.targets))
+    else:
+      counter_val = str(counter()).rjust(counter.format_length(), b' ')
+      counter_str = '[{}/{}] '.format(counter_val, counter.size)
+      # Do some reporting.
+      self.context.log.info(
+        counter_str,
+        'Compiling ',
+        items_to_report_element(sources, '{} source'.format(self.name())),
+        ' in ',
+        items_to_report_element([t.address.reference() for t in vts.targets], 'target'),
+        ' (',
+        progress_message,
+        ').')
+      with self.context.new_workunit('compile', labels=[WorkUnitLabel.COMPILER]):
+        # The compiler may delete classfiles, then later exit on a compilation error. Then if the
+        # change triggering the error is reverted, we won't rebuild to restore the missing
+        # classfiles. So we force-invalidate here, to be on the safe side.
+        vts.force_invalidate()
+        return self.async_compile(self._args, classpath, sources, outdir, upstream_analysis, analysis_file,
                      log_file, settings, fatal_warnings)
 
   def check_artifact_cache(self, vts):
@@ -655,6 +794,25 @@ class JvmCompile(NailgunTaskBase):
         return len(str(self.size))
     counter = Counter(len(invalid_vts_partitioned))
 
+
+    jobs = []
+    invalid_target_set = set(invalid_targets)
+    for vts in invalid_vts_partitioned:
+      assert len(vts.targets) == 1, ("Requested one target per partition, got {}".format(vts))
+
+      # Invalidated targets are a subset of relevant targets: get the context for this one.
+      compile_target = vts.targets[0]
+      compile_context = compile_contexts[compile_target]
+      compile_target_closure = compile_target.closure()
+
+      # dependencies of the current target which are invalid for this chunk
+      invalid_dependencies = (compile_target_closure & invalid_target_set) - [compile_target]
+
+      jobs.append(self._create_job(compile_target, vts, compile_context, invalid_dependencies, counter, classpath_products, extra_compile_time_classpath, compile_contexts))
+    return jobs
+
+  def _create_job(self, compile_target, vts, compile_context, invalid_dependencies, counter, classpath_products, extra_compile_time_classpath, compile_contexts):
+
     def check_cache(vts):
       """Manually checks the artifact cache (usually immediately before compilation.)
 
@@ -685,8 +843,7 @@ class JvmCompile(NailgunTaskBase):
         return True
       return os.path.exists(compile_context.analysis_file)
 
-
-    def no_cache_hit(vts, compile_context):
+    def compile_args():
       # Compute the compile classpath for this target.
       cp_entries = self._compute_classpath_entries(classpath_products,
                                                    compile_context,
@@ -712,20 +869,37 @@ class JvmCompile(NailgunTaskBase):
 
       # Capture a compilation log if requested.
       log_file = compile_context.log_file if self._capture_log else None
-      self._compile_vts(vts,
-                        compile_context.sources,
-                        tmp_analysis_file,
-                        upstream_analysis,
-                        cp_entries,
-                        compile_context.classes_dir,
-                        log_file,
-                        progress_message,
-                        target.platform,
-                        fatal_warnings,
-                        counter)
-      post_compile(tmp_analysis_file, compile_context)
 
-    def post_compile(tmp_analysis_file, compile_context):
+      return [vts,
+              compile_context.sources,
+              tmp_analysis_file,
+              upstream_analysis,
+              cp_entries,
+              compile_context.classes_dir,
+              log_file,
+              progress_message,
+              target.platform,
+              fatal_warnings,
+              counter]
+
+    def do_compile():
+      self._compile_vts(*compile_args())
+
+    def no_cache_hit():
+      do_compile()
+      post_compile()
+
+    def work_for_vts():
+      # Double check the cache before beginning compilation
+      hit_cache = check_cache(vts)
+      if not hit_cache:
+        no_cache_hit()
+
+      # Update the products with the latest classes.
+      self._register_vts([compile_context])
+
+    def post_compile():
+      tmp_analysis_file = "{}.tmp".format(compile_context.analysis_file)
       os.rename(tmp_analysis_file, compile_context.analysis_file)
       self._analysis_tools.relativize(compile_context.analysis_file, compile_context.portable_analysis_file)
 
@@ -735,37 +909,28 @@ class JvmCompile(NailgunTaskBase):
       # Jar the compiled output.
       self._create_context_jar(compile_context)
 
-    def work_for_vts(vts, compile_context):
-      # Double check the cache before beginning compilation
-      hit_cache = check_cache(vts)
-      if not hit_cache:
-        no_cache_hit(vts, compile_context)
+    def construct_nailgun_stuff():
+      return self._async_compile_vts(*compile_args())
+
+    def on_success_callback():
+      post_compile()
 
       # Update the products with the latest classes.
       self._register_vts([compile_context])
 
-    jobs = []
-    invalid_target_set = set(invalid_targets)
-    for vts in invalid_vts_partitioned:
-      assert len(vts.targets) == 1, ("Requested one target per partition, got {}".format(vts))
+      # If compilation and analysis work succeeds, validate the vts.
+      # Otherwise, fail it.
+      vts.update
 
-      # Invalidated targets are a subset of relevant targets: get the context for this one.
-      compile_target = vts.targets[0]
-      compile_context = compile_contexts[compile_target]
-      compile_target_closure = compile_target.closure()
 
-      # dependencies of the current target which are invalid for this chunk
-      invalid_dependencies = (compile_target_closure & invalid_target_set) - [compile_target]
-
-      jobs.append(Job(self.exec_graph_key_for_target(compile_target),
-                      functools.partial(work_for_vts, vts, compile_context),
+    return NailyJob(self.exec_graph_key_for_target(compile_target),
+                      construct_nailgun_stuff,
                       [self.exec_graph_key_for_target(target) for target in invalid_dependencies],
+      
                       self._size_estimator(compile_context.sources),
-                      # If compilation and analysis work succeeds, validate the vts.
-                      # Otherwise, fail it.
-                      on_success=vts.update,
-                      on_failure=vts.force_invalidate))
-    return jobs
+
+                      on_success=on_success_callback,
+                      on_failure=vts.force_invalidate)
 
   def _create_context_jar(self, compile_context):
     """Jar up the compile_context to its output jar location.

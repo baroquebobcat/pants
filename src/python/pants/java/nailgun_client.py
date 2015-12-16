@@ -13,6 +13,7 @@ import sys
 import threading
 from contextlib import contextmanager
 
+from pants.base.workunit import WorkUnit, WorkUnitLabel
 from pants.java.nailgun_io import NailgunStreamReader
 from pants.java.nailgun_protocol import ChunkType, NailgunProtocol
 from pants.util.socket import RecvBufferedSocket
@@ -26,7 +27,7 @@ class AsyncNailgunSession(NailgunProtocol):
 
   BUF_SIZE = 8192
 
-  def __init__(self, sock, in_fd, out_fd, err_fd):
+  def __init__(self, sock, in_fd, out_fd, err_fd, workunit):
     self._sock = sock
     #self._input_reader = NailgunStreamReader(in_fd, self._sock, self.BUF_SIZE) if in_fd else None
     self._in_fd = in_fd
@@ -35,26 +36,25 @@ class AsyncNailgunSession(NailgunProtocol):
     self._in_fd_errored = False
     self.stopped = False
     self.exit_code = None
+    self._workunit = workunit
 
-  def readable_fds(self):
-    return [self._in_fd, self._sock]
+    self.readables = self.files = [self._sock, self._in_fd]
+    
+    self.writables = []
+    self.exceptionables = self.readables
 
-  def writeable_fds(self):
-    return []
+  @property
+  def done(self):
+    return self.exit_code is not None
 
-  def exceptional_fds(self):
-    return [self._in_fd, self._sock]
-
-  def on_errored(self, i):
-    # TODO should do something better
-    if i == 0:
+  def on_io(self, read, write, err):
+    if self._in_fd in err:
       print('stdin failed!')
       self._in_fd_errored = True
-    elif i == 1:
-      print('nailgun socket failed')
+    elif self._sock in err:
+      print('nailgun socket failed!')
 
-  def on_readable(self, i):
-    if i == 0:
+    if self._in_fd in read:
       if self._in_fd_errored:
         # bail if errors
         return
@@ -70,10 +70,13 @@ class AsyncNailgunSession(NailgunProtocol):
           pass
         finally:
           self.stopped = True
-    elif i == 1:
-      result = self._process_chunk(NailgunProtocol.read_chunk(self._sock))
+    elif self._sock in read:
+      result = self._process_chunk(*NailgunProtocol.read_chunk(self._sock))
       if result is not None:
+        print('---EXITED---')
         self.exit_code = result
+        # TODO this should live somewhere else
+        self._workunit.set_outcome(WorkUnit.FAILURE if result else WorkUnit.SUCCESS)
   #@contextmanager
   #def _maybe_input_reader_running(self):
   #  if self._input_reader: self._input_reader.start()
@@ -94,20 +97,9 @@ class AsyncNailgunSession(NailgunProtocol):
     else:
       raise self.ProtocolError('Received unexpected chunk {} -> {}'.format(chunk_type, payload))
 
-  def _process_session(self):
-    """Process the outputs of the nailgun session."""
-    for chunk_type, payload in self.iter_chunks(self._sock):
-      r = self._process_chunk(chunk_type, payload)
-      if r is not None:
-        return r
-
-  def execute(self, working_dir, main_class, *arguments, **environment):
+  def start(self, working_dir, main_class, *arguments, **environment):
     # Send the nailgun request.
     self.send_request(self._sock, working_dir, main_class, *arguments, **environment)
-
-    # Launch the NailgunStreamReader if applicable and process the remainder of the nailgun session.
-    with self._maybe_input_reader_running():
-      return self._process_session()
 
 
 class NailgunClientSession(NailgunProtocol):
@@ -230,14 +222,14 @@ class NailgunClient(object):
     finally:
       sock.close()
 
-  def execute_async(self, main_class, cwd=None, *args, **environment):
+  def execute_async(self, main_class, cwd=None, workunit=None, *args, **environment):
     """Executes the given main_class with any supplied args in the given environment.
 
     :param string main_class: the fully qualified class name of the main entrypoint
     :param string cwd: Set the working directory for this command
     :param list args: any arguments to pass to the main entrypoint
     :param dict environment: an env mapping made available to native nails via the nail context
-    :returns: the exit code of the main_class.
+    :returns: The in progress session
     """
     environment = dict(self.ENV_DEFAULTS.items() + environment.items())
     cwd = cwd or self._workdir
@@ -245,17 +237,18 @@ class NailgunClient(object):
     # N.B. This can throw NailgunConnectionError (catchable via NailgunError).
     sock = self.try_connect()
 
-    session = NailgunClientSession(sock, self._stdin, self._stdout, self._stderr)
+    session = AsyncNailgunSession(sock, self._stdin, self._stdout, self._stderr, workunit)
     try:
-      return session.execute(cwd, main_class, *args, **environment)
+      session.start(cwd, main_class, *args, **environment)
+      return session
     except socket.error as e:
       raise self.NailgunError('Problem communicating with nailgun server at {}:{}: {!r}'
                               .format(self._host, self._port, e))
     except session.ProtocolError as e:
       raise self.NailgunError('Problem in nailgun protocol with nailgun server at {}:{}: {!r}'
                               .format(self._host, self._port, e))
-    finally:
-      sock.close()
+    #finally:
+    #  sock.close()
 
   def __repr__(self):
     return 'NailgunClient(host={!r}, port={!r}, workdir={!r})'.format(self._host,

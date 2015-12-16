@@ -134,6 +134,32 @@ class NailgunExecutor(Executor, ProcessManager):
                                       repr(java_version))]
     return digest.hexdigest()
 
+  def async_runner(self, classpath, main, jvm_options, args, cwd=None):
+    command = self._create_command(classpath, main, jvm_options, args)
+
+
+    class Runner(self.Runner):
+      @property
+      def executor(this):
+        return self
+
+      @property
+      def command(self):
+        return list(command)
+
+      def run_async(this, stdout=None, stderr=None, cwd=None, workunit=None):
+        nailgun = self._get_nailgun_client(jvm_options, classpath, stdout, stderr)
+        try:
+          logger.debug('Executing via {ng_desc}: {cmd}'.format(ng_desc=nailgun, cmd=this.cmd))
+          return nailgun.execute_async(main, cwd, workunit, *args)
+        except nailgun.NailgunError as e:
+          self.terminate()
+          raise self.Error('Problem launching via {ng_desc} command {main} {args}: {msg}'
+                           .format(ng_desc=nailgun, main=main, args=' '.join(args), msg=e))
+
+    return Runner()
+
+
   def _runner(self, classpath, main, jvm_options, args, cwd=None):
     """Runner factory. Called via Executor.execute()."""
     command = self._create_command(classpath, main, jvm_options, args)

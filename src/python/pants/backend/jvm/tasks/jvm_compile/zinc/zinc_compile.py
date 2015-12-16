@@ -305,6 +305,68 @@ class ZincCompile(JvmCompile):
       for processor in processors:
         f.write('{}\n'.format(processor.strip()))
 
+  def async_compile(self, args, classpath, sources, classes_output_dir, upstream_analysis, analysis_file,
+              log_file, settings, fatal_warnings):
+    #
+    # We add compiler_classpath to ensure the scala-library jar is on the classpath.
+    # TODO: This also adds the compiler jar to the classpath, which compiled code shouldn't
+    # usually need. Be more selective?
+    # TODO(John Sirois): Do we need to do this at all?  If adding scala-library to the classpath is
+    # only intended to allow target authors to omit a scala-library dependency, then ScalaLibrary
+    # already overrides traversable_dependency_specs to achieve the same end; arguably at a more
+    # appropriate level and certainly at a more appropriate granularity.
+    compile_classpath = self.compiler_classpath() + classpath
+
+    self._verify_zinc_classpath(self.get_options().pants_workdir, compile_classpath)
+    self._verify_zinc_classpath(self.get_options().pants_workdir, upstream_analysis.keys())
+
+    zinc_args = []
+
+    zinc_args.extend([
+      '-log-level', self.get_options().level,
+      '-analysis-cache', analysis_file,
+      '-classpath', ':'.join(compile_classpath),
+      '-d', classes_output_dir
+    ])
+    if not self.get_options().colors:
+      zinc_args.append('-no-color')
+    if not self.get_options().name_hashing:
+      zinc_args.append('-no-name-hashing')
+    if log_file:
+      zinc_args.extend(['-capture-log', log_file])
+
+    zinc_args.extend(['-compiler-interface', self.tool_jar('compiler-interface')])
+    zinc_args.extend(['-sbt-interface', self.tool_jar('sbt-interface')])
+    zinc_args.extend(['-scala-path', ':'.join(self.compiler_classpath())])
+
+    zinc_args += self.plugin_args()
+    if upstream_analysis:
+      zinc_args.extend(['-analysis-map',
+                        ','.join('{}:{}'.format(*kv) for kv in upstream_analysis.items())])
+
+    zinc_args += args
+
+    zinc_args.extend([
+      '-C-source', '-C{}'.format(settings.source_level),
+      '-C-target', '-C{}'.format(settings.target_level),
+    ])
+    zinc_args.extend(settings.args)
+
+    if fatal_warnings:
+      zinc_args.extend(['-S-Xfatal-warnings', '-C-Werror'])
+
+    jvm_options = list(self._jvm_options)
+
+    zinc_args.extend(sources)
+
+    self.log_zinc_file(analysis_file)
+    return self.async_runjava(classpath=self.zinc_classpath(),
+                    main=self._ZINC_MAIN,
+                    jvm_options=jvm_options,
+                    args=zinc_args,
+                    workunit_name='zinc',
+                    workunit_labels=[WorkUnitLabel.COMPILER])
+
   def compile(self, args, classpath, sources, classes_output_dir, upstream_analysis, analysis_file,
               log_file, settings, fatal_warnings):
     # We add compiler_classpath to ensure the scala-library jar is on the classpath.

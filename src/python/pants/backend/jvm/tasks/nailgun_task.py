@@ -15,6 +15,7 @@ from pants.java.distribution.distribution import DistributionLocator
 from pants.java.executor import SubprocessExecutor
 from pants.java.nailgun_executor import NailgunExecutor, NailgunProcessGroup
 from pants.task.task import Task, TaskBase
+from pants.base.workunit import WorkUnit, WorkUnitLabel
 
 
 class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
@@ -104,6 +105,63 @@ class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
     except executor.Error as e:
       raise TaskError(e)
 
+  def async_runjava(self, classpath, main, jvm_options=None, args=None, workunit_name=None,
+              workunit_labels=None, workunit_log_config=None):
+    """Runs the java main using the given classpath and args.
+
+    If --no-use-nailgun is specified then the java main is run in a freshly spawned subprocess,
+    otherwise a persistent nailgun server dedicated to this Task subclass is used to speed up
+    amortized run times.
+    """
+    executor = self.create_java_executor()
+
+    # Creating synthetic jar to work around system arg length limit is not necessary
+    # when `NailgunExecutor` is used because args are passed through socket, therefore turning off
+    # creating synthetic jar if nailgun is used.
+    create_synthetic_jar = not self.get_options().use_nailgun
+
+    #return {'classpath'  : classpath,
+    #       'main'       : main,
+    #       'jvm_options': jvm_options,
+    #       'args'       : args,
+    #       'executor'   : executor,
+    #       'workunit_factory': self.context.new_workunit,
+    #       'workunit_name'   : workunit_name,
+    #       'workunit_labels' : workunit_labels,
+    #       'workunit_log_config' : workunit_log_config,
+    #       'create_synthetic_jar': create_synthetic_jar,
+    #       'synthetic_jar_dir'   : self._executor_workdir}
+    def wu_factory(name, labels=None, cmd='', log_config=None):
+      parent = self.context.run_tracker._threadlocal.current_workunit
+      workunit = WorkUnit(run_info_dir=self.context.run_tracker.run_info_dir, parent=parent, name=name, labels=labels,
+                    cmd=cmd, log_config=log_config)
+      workunit.start()
+
+      outcome = WorkUnit.FAILURE  # Default to failure we will override if we get success/abort.
+      try:
+        self.context.run_tracker.report.start_workunit(workunit)
+        return workunit
+      except KeyboardInterrupt:
+        outcome = WorkUnit.ABORTED
+        self.context.run_tracker._aborted = True
+        raise
+      #else:
+      #  outcome = WorkUnit.SUCCESS
+      #finally:
+      #  workunit.set_outcome(outcome)
+      #  self.context.run_tracker.end_workunit(workunit)
+
+    return util.async_execute_java(classpath=classpath,
+                               main=main,
+                               jvm_options=jvm_options,
+                               args=args,
+                               executor=executor,
+                               workunit_factory=wu_factory,
+                               workunit_name=workunit_name,
+                               workunit_labels=workunit_labels,
+                               workunit_log_config=workunit_log_config,
+                               create_synthetic_jar=create_synthetic_jar,
+                               synthetic_jar_dir=self._executor_workdir)
 
 # TODO(John Sirois): This just prevents ripple - maybe inline
 class NailgunTask(NailgunTaskBase, Task): pass
