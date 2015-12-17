@@ -76,7 +76,7 @@ class AsyncNailgunSession(NailgunProtocol):
         self.exit_code = result
         try:
           self._sock.close()
-        except: #TODO do something better here
+        except Exception: #TODO do something better here
           pass
         # TODO this should live somewhere else
         self._workunit.set_outcome(WorkUnit.FAILURE if result else WorkUnit.SUCCESS)

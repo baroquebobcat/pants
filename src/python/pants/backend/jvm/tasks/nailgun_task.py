@@ -10,12 +10,12 @@ import os
 from pants.backend.jvm.targets.jar_dependency import JarDependency
 from pants.backend.jvm.tasks.jvm_tool_task_mixin import JvmToolTaskMixin
 from pants.base.exceptions import TaskError
+from pants.base.workunit import WorkUnit, WorkUnitLabel
 from pants.java import util
 from pants.java.distribution.distribution import DistributionLocator
 from pants.java.executor import SubprocessExecutor
 from pants.java.nailgun_executor import NailgunExecutor, NailgunProcessGroup
 from pants.task.task import Task, TaskBase
-from pants.base.workunit import WorkUnit, WorkUnitLabel
 
 
 class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
@@ -122,9 +122,11 @@ class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
 
     def wu_factory(name, labels=None, cmd='', log_config=None):
       class SelfReportingWorkUnit(WorkUnit):
+
         def __init__(self, run_tracker, run_info_dir, parent, name, labels=None, cmd='', log_config=None):
           super(SelfReportingWorkUnit, self).__init__(run_info_dir, parent, name, labels, cmd, log_config)
           self._run_tracker = run_tracker
+
         def set_outcome(self, outcome):
           # this way, when the outcome is set at the end, it'll trigger the end of the workunit reporting
           super(SelfReportingWorkUnit, self).set_outcome(outcome)
@@ -160,6 +162,7 @@ class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
                                workunit_log_config=workunit_log_config,
                                create_synthetic_jar=create_synthetic_jar,
                                synthetic_jar_dir=self._executor_workdir)
+
 
 # TODO(John Sirois): This just prevents ripple - maybe inline
 class NailgunTask(NailgunTaskBase, Task): pass

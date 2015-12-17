@@ -46,7 +46,6 @@ def async_execute_java(classpath, main, jvm_options=None, args=None, executor=No
                         workunit_log_config=workunit_log_config)
 
 
-
 def execute_runner_async(runner, workunit_factory=None, workunit_name=None, workunit_labels=None,
                    cwd=None, workunit_log_config=None):
   """Executes the given java runner.
@@ -85,7 +84,6 @@ def execute_runner_async(runner, workunit_factory=None, workunit_name=None, work
     wip = runner.run_async(stdout=workunit.output('stdout'), stderr=workunit.output('stderr'), cwd=cwd, workunit=workunit)
     #workunit.set_outcome(WorkUnit.FAILURE if ret else WorkUnit.SUCCESS)
     return wip
-
 
 
 def execute_java(classpath, main, jvm_options=None, args=None, executor=None,

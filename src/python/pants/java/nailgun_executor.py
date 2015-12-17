@@ -159,7 +159,6 @@ class NailgunExecutor(Executor, ProcessManager):
 
     return Runner()
 
-
   def _runner(self, classpath, main, jvm_options, args, cwd=None):
     """Runner factory. Called via Executor.execute()."""
     command = self._create_command(classpath, main, jvm_options, args)

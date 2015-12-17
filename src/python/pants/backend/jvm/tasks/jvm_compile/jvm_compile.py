@@ -12,15 +12,15 @@ import os
 import select
 from collections import defaultdict, deque
 
-from pants.java import util
 from pants.backend.jvm.subsystems.java import Java
 from pants.backend.jvm.subsystems.jvm_platform import JvmPlatform
 from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.compile_context import CompileContext
-from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph, Executor, SUCCESSFUL, FAILED,
-                                                                 Job, WorkerPoolExecutor)
+from pants.backend.jvm.tasks.jvm_compile.execution_graph import (FAILED, SUCCESSFUL,
+                                                                 ExecutionFailure, ExecutionGraph,
+                                                                 Executor, Job, WorkerPoolExecutor)
 from pants.backend.jvm.tasks.nailgun_task import NailgunTaskBase
 from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
@@ -30,6 +30,7 @@ from pants.base.workunit import WorkUnitLabel
 from pants.build_graph.resources import Resources
 from pants.build_graph.target import Target
 from pants.goal.products import MultipleRootedProducts
+from pants.java import util
 from pants.option.custom_types import list_option
 from pants.reporting.reporting_utils import items_to_report_element
 from pants.util.dirutil import fast_relpath, safe_delete, safe_mkdir, safe_walk
@@ -101,12 +102,12 @@ class NailyExecutor(Executor):
   def _add_to_finished_queue(self, result):
     self._job_results.append(result)
 
+
 class NailyJob(Job):
   """"""
 
   def __init__(self, key, before_shellout, dependencies, size=0, on_success=None, on_failure=None):
     super(NailyJob, self).__init__(key, before_shellout, dependencies, size, on_success, on_failure)
-
 
   def start(self):
     async_java_run = self.fn()
@@ -332,7 +333,6 @@ class JvmCompile(NailgunTaskBase):
     """
     raise NotImplementedError()
 
-
   def async_compile(self, args, classpath, sources, classes_output_dir, upstream_analysis, analysis_file,
               log_file, settings, fatal_warnings):
     """Return the args for invoking the compiler
@@ -352,7 +352,6 @@ class JvmCompile(NailgunTaskBase):
     :param fatal_warnings: whether to convert compilation warnings to errors.
     """
     raise NotImplementedError()
-
 
   # Subclasses may override.
   # ------------------------
