@@ -120,20 +120,18 @@ class NailgunTaskBase(JvmToolTaskMixin, TaskBase):
     # creating synthetic jar if nailgun is used.
     create_synthetic_jar = not self.get_options().use_nailgun
 
-    #return {'classpath'  : classpath,
-    #       'main'       : main,
-    #       'jvm_options': jvm_options,
-    #       'args'       : args,
-    #       'executor'   : executor,
-    #       'workunit_factory': self.context.new_workunit,
-    #       'workunit_name'   : workunit_name,
-    #       'workunit_labels' : workunit_labels,
-    #       'workunit_log_config' : workunit_log_config,
-    #       'create_synthetic_jar': create_synthetic_jar,
-    #       'synthetic_jar_dir'   : self._executor_workdir}
     def wu_factory(name, labels=None, cmd='', log_config=None):
+      class SelfReportingWorkUnit(WorkUnit):
+        def __init__(self, run_tracker, run_info_dir, parent, name, labels=None, cmd='', log_config=None):
+          super(SelfReportingWorkUnit, self).__init__(run_info_dir, parent, name, labels, cmd, log_config)
+          self._run_tracker = run_tracker
+        def set_outcome(self, outcome):
+          # this way, when the outcome is set at the end, it'll trigger the end of the workunit reporting
+          super(SelfReportingWorkUnit, self).set_outcome(outcome)
+          self._run_tracker.end_workunit(workunit)
+
       parent = self.context.run_tracker._threadlocal.current_workunit
-      workunit = WorkUnit(run_info_dir=self.context.run_tracker.run_info_dir, parent=parent, name=name, labels=labels,
+      workunit = SelfReportingWorkUnit(self.context.run_tracker, run_info_dir=self.context.run_tracker.run_info_dir, parent=parent, name=name, labels=labels,
                     cmd=cmd, log_config=log_config)
       workunit.start()
 

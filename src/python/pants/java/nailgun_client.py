@@ -73,8 +73,11 @@ class AsyncNailgunSession(NailgunProtocol):
     elif self._sock in read:
       result = self._process_chunk(*NailgunProtocol.read_chunk(self._sock))
       if result is not None:
-        print('---EXITED---')
         self.exit_code = result
+        try:
+          self._sock.close()
+        except: #TODO do something better here
+          pass
         # TODO this should live somewhere else
         self._workunit.set_outcome(WorkUnit.FAILURE if result else WorkUnit.SUCCESS)
   #@contextmanager

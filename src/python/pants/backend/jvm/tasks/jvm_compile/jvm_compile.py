@@ -57,31 +57,23 @@ class NailyExecutor(Executor):
       read = [x for job in self._currently_running_jobs for x in job.readables if x]
       write = [x for job in self._currently_running_jobs for x in job.writables if x]
       exception = [x for job in self._currently_running_jobs for x in job.exceptionables if x]
-      print('read {}'.format(read))
-      print('write {}'.format(write))
-      print('exception {}'.format(exception))
-      read, write, exception = select.select(read, write, exception, 10)
-      print('----------after select----------')
-      print('read {}'.format(read))
-      print('write {}'.format(write))
-      print('exception {}'.format(exception))
+      # if out of file descriptors, raises: 'filedescriptor out of range in select'
+      read_ready, write_ready, exception_ready = select.select(read, write, exception, 10)
 
       # collate file handles
       args_by_job = {job: [[],[],[]] for job in self._currently_running_jobs}
-      def add_blah(x, arg_index):
+      def collate(x, arg_index):
         for xable in x:
           owning_job = next((job for job in self._currently_running_jobs if xable in job.files), None)
           if owning_job:
             args_by_job[owning_job][arg_index].append(xable)
-      add_blah(read, 0)
-      add_blah(write, 1)
-      add_blah(exception, 2)
+
+      collate(read_ready, 0)
+      collate(write_ready, 1)
+      collate(exception_ready, 2)
 
       # handle IO
       for job, args in args_by_job.items():
-        print('job {}'.format(job))
-        print('  files {}'.format(job.files))
-        print('args {}'.format(args))
         job.on_io(*args)
         if job.is_done:
           self._currently_running_jobs.remove(job)
@@ -93,18 +85,17 @@ class NailyExecutor(Executor):
         return self._job_results.popleft()
       else:
         return None
-    
-      
 
   def has_capacity(self):
     """True when new jobs can be added."""
-    return len(self._currently_running_jobs) <= self._max_jobs
+    return len(self._currently_running_jobs) < self._max_jobs
 
   def start_job(self, job):
     """Schedules a job to be executed."""
     if not self.has_capacity():
       raise Exception("not enough capacity to schedule {}".format(job))
     self._currently_running_jobs.append(job)
+    print("len(_currently_running_jobs) {}".format(len(self._currently_running_jobs)))
     job.start()
 
   def _add_to_finished_queue(self, result):
@@ -113,33 +104,18 @@ class NailyExecutor(Executor):
 class NailyJob(Job):
   """"""
 
-  # need
-  # - ability to do a cache check and skip
-  # - start nailgun / process in a way that we can wait via select for results
-  # takes a fn that returns file descriptors to watch
-  # - pre-run code
-  # - jvm command cfg
-  # - post?
-  # some state methods
-  # - started
-  # - file descriptor
-  # - etc
   def __init__(self, key, before_shellout, dependencies, size=0, on_success=None, on_failure=None):
     super(NailyJob, self).__init__(key, before_shellout, dependencies, size, on_success, on_failure)
 
 
   def start(self):
-    # TODO something with workunits perhaps, perhaps not. Maybe they should have already been setup
-
     async_java_run = self.fn()
     self._async_java_run = async_java_run
-    # hand wave starting async nailgun jobbins
     self.files = async_java_run.files
     self.readables = async_java_run.readables
     self.writables = async_java_run.writables
     self.exceptionables = async_java_run.exceptionables
     self.is_done = False
-    #raise Exception("dunno yet {}".format(nailgun_args))
 
   def on_io(self, read, write, err):
     self._async_java_run.on_io(read, write, err)
@@ -150,9 +126,6 @@ class NailyJob(Job):
       else:
         # TODO reporting--errors will be swallowed rn
         self.result = (self.key, FAILED, TaskError('Compilation failed.'))
-    # when done, set self.result, self.is_done
-
-
 #---------------------------------------------------------------------------------------
 
 
