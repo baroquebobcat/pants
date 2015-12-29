@@ -60,6 +60,11 @@ class M2Coordinate(object):
     self._id = (self.org, self.name, self.rev, self.classifier, self.ext)
 
   @memoized_property
+  def id_without_rev(self):
+    tup = (self.org, self.name or 'None', self.classifier or '', self.ext)
+    return ':'.join(tup)
+
+  @memoized_property
   def artifact_filename(self):
     """Returns the canonical maven-style filename for an artifact pointed at by this coordinate.
 

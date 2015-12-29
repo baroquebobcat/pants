@@ -351,6 +351,7 @@ class JvmCompile(NailgunTaskBase):
 
     classpath_product = self.context.products.get_data('runtime_classpath')
     fingerprint_strategy = self._fingerprint_strategy(classpath_product)
+    print('before invalidation_check')
     # Invalidation check. Everything inside the with block must succeed for the
     # invalid targets to become valid.
     with self.invalidated(relevant_targets,
@@ -358,7 +359,7 @@ class JvmCompile(NailgunTaskBase):
                           partition_size_hint=0,
                           fingerprint_strategy=fingerprint_strategy,
                           topological_order=True) as invalidation_check:
-
+      print('after invalidation_check')
       # Initialize the classpath for all targets.
       compile_contexts = {vt.target: self._compile_context(vt.target, vt.results_dir)
                           for vt in invalidation_check.all_vts}

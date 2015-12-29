@@ -14,6 +14,7 @@ from pants.base.hash_utils import hash_all
 from pants.build_graph.target import Target
 from pants.fs.fs import safe_filename
 from pants.util.dirutil import safe_mkdir
+from pants.util.memo import memoized_method, memoized_property
 
 
 # A CacheKey represents some version of a set of targets.
@@ -64,6 +65,7 @@ class CacheKeyGenerator(object):
     self._cache_key_gen_version = '_'.join([cache_key_gen_version or '',
                                             GLOBAL_CACHE_KEY_GEN_VERSION])
 
+  @memoized_method
   def key_for_target(self, target, transitive=False, fingerprint_strategy=None):
     """Get a key representing the given target and its sources.
 

@@ -40,7 +40,9 @@ def assert_list(obj, expected_type=string_types, can_be_none=True, default=(), k
         '{}Expected an object of acceptable type {}, received None and can_be_none is False'
           .format(key_msg, allowable))
 
-  if isinstance(val, allowable):
+  if isinstance(val, FilesetWithSpec):
+    return val
+  elif isinstance(val, allowable):
     lst = list(val)
     for e in lst:
       if not isinstance(e, expected_type):

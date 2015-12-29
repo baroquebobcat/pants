@@ -36,6 +36,7 @@ from pants.backend.jvm.tasks.check_published_deps import CheckPublishedDeps
 from pants.backend.jvm.tasks.detect_duplicates import DuplicateDetector
 from pants.backend.jvm.tasks.ivy_imports import IvyImports
 from pants.backend.jvm.tasks.ivy_resolve import IvyResolve
+from pants.backend.jvm.tasks.blah_resolve import BlahResolve
 from pants.backend.jvm.tasks.jar_create import JarCreate
 from pants.backend.jvm.tasks.jar_publish import JarPublish
 from pants.backend.jvm.tasks.javadoc_gen import JavadocGen
@@ -127,6 +128,7 @@ def register_goals():
 
   # Dependency resolution.
   task(name='ivy', action=IvyResolve).install('resolve')
+  task(name='blah-resolve', action=BlahResolve).install()
   task(name='ivy-imports', action=IvyImports).install('imports')
   task(name='unpack-jars', action=UnpackJars).install()
 
