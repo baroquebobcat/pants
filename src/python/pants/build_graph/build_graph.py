@@ -59,7 +59,14 @@ class BuildGraph(object):
     self._target_dependencies_by_address = defaultdict(OrderedSet)
     self._target_dependees_by_address = defaultdict(set)
     self._derived_from_by_derivative_address = {}
+    #self._invalidate_cache()
+    self._cache_of_closures = defaultdict(OrderedSet)
     self.synthetic_addresses = set()
+
+  def _invalidate_cache(self):
+    # invalidate only if it has contents
+    if self._cache_of_closures:
+      self._cache_of_closures = defaultdict(OrderedSet)
 
   def contains_address(self, address):
     return address in self._target_by_address
@@ -116,6 +123,8 @@ class BuildGraph(object):
       next_address = self._derived_from_by_derivative_address.get(current_address, current_address)
     return self.get_target(current_address)
 
+
+  _no_dependees = frozenset()
   def inject_target(self, target, dependencies=None, derived_from=None, synthetic=False):
     """Injects a fully realized Target into the BuildGraph.
 
@@ -127,7 +136,7 @@ class BuildGraph(object):
       from another target.
     """
 
-    dependencies = dependencies or frozenset()
+    dependencies = dependencies or self._no_dependees
     address = target.address
 
     if address in self._target_by_address:
@@ -151,7 +160,7 @@ class BuildGraph(object):
       self.synthetic_addresses.add(address)
 
     self._target_by_address[address] = target
-
+    self._invalidate_cache()
     for dependency_address in dependencies:
       self.inject_dependency(dependent=address, dependency=dependency_address)
 
@@ -165,6 +174,7 @@ class BuildGraph(object):
       is being added.
     :param Address dependency: The dependency to be injected.
     """
+    self._invalidate_cache()
     if dependent not in self._target_by_address:
       raise ValueError('Cannot inject dependency from {dependent} on {dependency} because the'
                        ' dependent is not in the BuildGraph.'
@@ -239,6 +249,33 @@ class BuildGraph(object):
     This is identical to reversing the direction of every arrow in the DAG, then calling
     `walk_transitive_dependency_graph`.
     """
+    #if predicate is None:
+    #  self._dependee_memo = defaultdict(list)
+    #  targets = []
+    #  walked = set()
+    #  def _w_rec(addr):
+    #    if addr in walked:
+    #      return []
+    #    walked.add(addr)
+#
+    #    memod = self._dependee_memo.get(addr)
+    #    if memod:
+    #      return memod
+    #    ret = []
+#
+    #    target = self._target_by_address[addr]
+    #    if not postorder:
+    #      ret.append(target)
+    #    for dep_address in self._target_dependees_by_address[addr]:
+    #      ret.extend(_w_rec(dep_address))
+    #    if postorder:
+    #      ret.append(target)
+    #    self._dependee_memo[addr]=ret
+    #    return ret
+    #  for address in addresses:
+    #    for t in _w_rec(address):
+
+
     walked = set()
 
     def _walk_rec(addr):
@@ -281,11 +318,17 @@ class BuildGraph(object):
     :param function predicate: The predicate passed through to
       `walk_transitive_dependencies_graph`.
     """
-    ret = OrderedSet()
-    self.walk_transitive_dependency_graph(addresses, ret.add,
-                                          predicate=predicate,
-                                          postorder=postorder)
-    return ret
+    key = tuple(addresses)+(predicate,)
+    cached = self._cache_of_closures.get(key)
+    if cached is None:
+
+      ret = OrderedSet()
+      self.walk_transitive_dependency_graph(addresses, ret.add,
+                                            predicate=predicate,
+                                            postorder=postorder)
+      self._cache_of_closures[key]=ret
+      return ret
+    return cached
 
   def transitive_subgraph_of_addresses_bfs(self, addresses, predicate=None):
     """Returns the transitive dependency closure of `addresses` using BFS.
@@ -296,16 +339,21 @@ class BuildGraph(object):
       walked, nor will its dependencies.  Thus predicate effectively trims out any subgraph
       that would only be reachable through Targets that fail the predicate.
     """
-    walked = OrderedSet()
-    to_walk = deque(addresses)
-    while len(to_walk) > 0:
-      address = to_walk.popleft()
-      target = self._target_by_address[address]
-      if target not in walked:
-        if not predicate or predicate(target):
-          walked.add(target)
-          to_walk.extend(self._target_dependencies_by_address[address])
-    return walked
+    key = tuple(addresses)+('--bfs--',)
+    cached = self._cache_of_closures.get(key)
+    if cached is None:
+      walked = OrderedSet()
+      to_walk = deque(addresses)
+      while len(to_walk) > 0:
+        address = to_walk.popleft()
+        target = self._target_by_address[address]
+        if target not in walked:
+          if not predicate or predicate(target):
+            walked.add(target)
+            to_walk.extend(self._target_dependencies_by_address[address])
+      self._cache_of_closures[key]=walked
+      return walked
+    return cached
 
   def inject_synthetic_target(self,
                               address,
