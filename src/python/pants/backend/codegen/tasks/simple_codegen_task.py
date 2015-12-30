@@ -143,6 +143,7 @@ class SimpleCodegenTask(Task):
     return synthetic_address
 
   def execute(self):
+    self._cached_target_root_set = set(self.context.target_roots)
     with self.invalidated(self.codegen_targets(),
                           invalidate_dependents=True,
                           fingerprint_strategy=self.get_fingerprint_strategy()) as invalidation_check:
@@ -197,10 +198,13 @@ class SimpleCodegenTask(Task):
     build_graph.walk_transitive_dependee_graph(
       build_graph.dependencies_of(target.address),
       work=lambda t: t.mark_transitive_invalidation_hash_dirty(),
+      # pred is if it's already marked dirty
+      predicate=lambda t: bool(t._cached_transitive_fingerprint_map)
     )
 
-    if target in self.context.target_roots:
+    if target in self._cached_target_root_set:
       self.context.target_roots.append(synthetic_target)
+      self._cached_target_root_set.add(synthetic_target) # in case the synthetic target has its own synthetic targets added after
 
     return synthetic_target
 
