@@ -127,24 +127,24 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     try:
       for b in binaries:
         bi +=1
-        print('Binary: {} ({}/{})'.format(b.address.spec, bi, len(binaries)))
+        self.context.log.debug('Binary: {} ({}/{})'.format(b.address.spec, bi, len(binaries)))
 
         cache_key = self._cache_key_generator.key_for_target(b, transitive=True, fingerprint_strategy=fingerprinter)
         if cache_key is None:
-          print('  No cache_key for it. Skipping')
+          self.context.log.debug('  No cache_key for it. Skipping')
           continue
 
         fingerprint = cache_key.hash
         frozen_file = '{}/FREEZE.{}'.format(b.address.spec_path, b.address.target_name)
         thirdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
         
-        print('  fingerprint: {}'.format(fingerprint))
+        self.context.log.debug('  fingerprint: {}'.format(fingerprint))
 
         b_closure = b.closure()
         for t in b_closure:
           target_to_binaries[t].add(b)
         jar_library_targets = [t for t in b_closure if isinstance(t, JarLibrary)]
-        sets_of_jar_libraries.add(tuple(sorted(set(jar_library_targets))))
+        sets_of_jar_libraries.add(frozenset(jar_library_targets))
 
 
         loaded_from_file = False
@@ -173,10 +173,10 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
                 elif line.startswith('  '):
                   spec = line.strip()
                   current_thirdparty_target = self.context.build_graph.get_target_from_spec(spec)
-              print('  loaded from file')
+              self.context.log.debug('  loaded from file')
 
         if not loaded_from_file:
-          print(' resolving')
+          self.context.log.debug(' resolving')
           confs = self.get_options().confs
           b_cp = ClasspathProducts(self.get_options().pants_workdir)
           resolve_hash_name = self.resolve(executor=executor,
@@ -194,6 +194,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
             for thirdparty_lib, jars in thirdparty_lib_to_resolved_versions.items():
               f.write('  {}\n'.format(thirdparty_lib.address.spec))
               for r in jars:
+                # TODO hash of jars too*
                 f.write('    {!s}\n'.format(r.coordinate))
 
     except BaseException as e:
@@ -201,49 +202,58 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       print('!!with exception!!: {}'.format(e))
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
-    # summary
-    print()
-    for j, vct in sorted(jar_to_versions.items(), key=lambda x: len(x[1])):
-      print('{} ct:{}'.format(j, len(vct)))
-      for v, ct in sorted(vct.items(), key=lambda x: x[1]):
-        print('  {}: {}'.format(v,ct))
-    ct_targets_w_more_than_one_set = defaultdict(lambda: 0)
+    with self.context.new_workunit('stats'):
+      # summary
+      print()
+      for j, vct in sorted(jar_to_versions.items(), key=lambda x: len(x[1])):
+        print('{} ct:{}'.format(j, len(vct)))
+        for v, ct in sorted(vct.items(), key=lambda x: x[1]):
+          print('  {}: {}'.format(v,ct))
+      ct_targets_w_more_than_one_set = defaultdict(lambda: 0)
 
-    print()
-    print()
-#date "+%Y-%m-%dT%H-%M-%S"
-    for t in targets:
-      # skip 3rdparty targets for the purpose of checking # of sets
-      if isinstance(t, JarLibrary):
-        continue
+      print()
+      print()
+  #date "+%Y-%m-%dT%H-%M-%S"
+      for t in targets:
+        # skip 3rdparty targets for the purpose of checking # of sets
+        if isinstance(t, JarLibrary):
+          continue
 
-      bs = target_to_binaries.get(t)
+        bs = target_to_binaries.get(t)
 
-      # if none, then the target has no dependent binaries / tests
-      if not bs:
-        #if t not in binaries:
-        #  #print('no binaries for {}'.format(t.address.spec))
-        continue
+        # if none, then the target has no dependent binaries / tests
+        if not bs:
+          #if t not in binaries:
+          #  #print('no binaries for {}'.format(t.address.spec))
+          continue
 
-      t_3rdparty_libs = [tt for tt in t.closure() if isinstance(tt, JarLibrary)]
-      ext_dep_sets = set()
-      for b in bs:
-        set_for_b = set()
-        erdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
-        for tt in t_3rdparty_libs:
-          set_for_b.update(erdparty_lib_to_resolved_versions[tt])
-        ext_dep_sets.add(tuple(sorted(set_for_b)))
-      if len(ext_dep_sets) > 1:
-        #print('for {}'.format(t.address.spec))
-        #print('  sets of ext_deps: {}'.format(len(ext_dep_sets)))
-        ct_targets_w_more_than_one_set[len(ext_dep_sets)] += 1
-    print()
-    print('sets_of_jar_libraries:               {}'.format(len(sets_of_jar_libraries)) )
-    print('total bin/test targets:              {}'.format(len(binaries)))
-    print('non-bin/test targets w/ > 1 dep set: {}'.format(sum(ct_targets_w_more_than_one_set.values())))
-    for no, ct in ct_targets_w_more_than_one_set.items():
-      print('    {}: {}'.format(no, ct))
-    print('all targets           :              {}'.format(len(targets)))
+        t_3rdparty_libs = [tt for tt in t.closure() if isinstance(tt, JarLibrary)]
+        ext_dep_sets = set()
+        for b in bs:
+          set_for_b = []
+          erdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
+          for tt in t_3rdparty_libs:
+            set_for_b.extend(erdparty_lib_to_resolved_versions[tt])
+          ext_dep_sets.add(frozenset(set_for_b))
+          if len(ext_dep_sets) > 10:
+            break
+        if len(ext_dep_sets) > 1:
+          #print('for {}'.format(t.address.spec))
+          #print('  sets of ext_deps: {}'.format(len(ext_dep_sets)))
+          #for s in ext_dep_sets:
+          #  print('    - {}'.format(s))
+          #break
+          key = len(ext_dep_sets) if (len(ext_dep_sets) < 11) else '> 10'
+          ct_targets_w_more_than_one_set[key] += 1
+        
+
+      print()
+      print('sets_of_jar_libraries:               {}'.format(len(sets_of_jar_libraries)) )
+      print('total bin/test targets:              {}'.format(len(binaries)))
+      print('non-bin/test targets w/ > 1 dep set: {}'.format(sum(ct_targets_w_more_than_one_set.values())))
+      for no, ct in ct_targets_w_more_than_one_set.items():
+        print('    {}: {}'.format(no, ct))
+      print('all targets           :              {}'.format(len(targets)))
 
   # CP + and modify from ivy_task_mixin
   def resolve(self, executor, targets, classpath_products, confs=None, extra_args=None,
