@@ -16,6 +16,7 @@ from pants.base.exceptions import TargetDefinitionException
 from pants.base.payload import Payload
 from pants.base.payload_field import BundleField, PrimitiveField
 from pants.build_graph.target import Target
+from pants.util.memo import memoized_property
 
 
 class RelativeToMapper(object):
@@ -111,7 +112,7 @@ class Bundle(object):
       raise ValueError("Must specify exactly one of 'mapper' or 'relative_to'")
 
     self._rel_path = rel_path or target_rel_path
-    self.filemap = {}
+    #self.filemap = {}
 
     if relative_to:
       base = os.path.join(get_buildroot(), self._rel_path, relative_to)
@@ -119,9 +120,23 @@ class Bundle(object):
     else:
       self.mapper = mapper or RelativeToMapper(os.path.join(get_buildroot(), self._rel_path))
 
-    if fileset is not None:
-      self._add([fileset])
+    #if fileset is not None:
+    #  self._add([fileset])
     self.fileset = fileset
+
+  @memoized_property
+  def filemap(self):
+    paths = self.fileset() if isinstance(self.fileset, Fileset) \
+        else fileset if hasattr(self.fileset, '__iter__') \
+        else [fileset]
+    filemap = {}
+    for path in paths:
+      abspath = path
+      if not os.path.isabs(abspath):
+        abspath = os.path.join(get_buildroot(), self._rel_path, path)
+      filemap[abspath] = self.mapper(abspath)
+
+    return filemap
 
   def _add(self, filesets):
     for fileset in filesets:
