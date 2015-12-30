@@ -172,9 +172,11 @@ class Address(object):
       return self._spec_path
 
   def __eq__(self, other):
-    return (other and
-            self._spec_path == other._spec_path and
-            self._target_name == other._target_name)
+    return (self is other or
+            (other and
+             self._spec_path == other._spec_path and
+             self._target_name == other._target_name)
+           )
 
   _hash = None
 

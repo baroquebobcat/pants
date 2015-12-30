@@ -526,7 +526,7 @@ class Target(AbstractTarget):
     return self.address < other.address
 
   def __eq__(self, other):
-    return isinstance(other, Target) and self.address == other.address
+    return self is other or (isinstance(other, Target) and self.address == other.address)
 
   def __hash__(self):
     return hash(self.address)

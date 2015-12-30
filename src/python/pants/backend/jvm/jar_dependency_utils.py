@@ -25,7 +25,7 @@ class ResolvedJar(object):
     self._id = (coordinate, cache_path, pants_path)
 
   def __eq__(self, other):
-    return isinstance(other, ResolvedJar) and self._id == other._id
+    return self is other or (isinstance(other, ResolvedJar) and self._id == other._id)
 
   def __ne__(self, other):
     return not self == other
@@ -80,7 +80,7 @@ class M2Coordinate(object):
                                                         ext=self.ext)
 
   def __eq__(self, other):
-    return isinstance(other, M2Coordinate) and self._id == other._id
+    return self is other or (isinstance(other, M2Coordinate) and self._id == other._id)
 
   def __ne__(self, other):
     return not self == other
