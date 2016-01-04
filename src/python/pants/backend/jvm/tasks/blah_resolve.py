@@ -37,6 +37,24 @@ def get_or_create_resolved_jar(org, name, rev, classifier, ext):
   return r
 
 
+class LoadFromFreezeResult(object):
+  """Collects the results from loading a FREEZE file."""
+  def __init__(self, valid):
+    self._valid = valid
+    self.target_to_resolved_jars = defaultdict(set)
+
+  def successful(self):
+    return self._valid
+
+  def add_resolved_artifact_for_target(self,current_thirdparty_target, resolved_jar):
+    self.target_to_resolved_jars[current_thirdparty_target].add(resolved_jar)
+
+  @property
+  def resolved_jars(self):
+    for jar_set in self.target_to_resolved_jars.values():
+      for jar in jar_set:
+        yield jar
+
 class BlahResolve(IvyTaskMixin, NailgunTask):
 
   @classmethod
@@ -92,6 +110,39 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     for arg in self.get_options().args:
       self._args.extend(safe_shlex_split(arg))
 
+  def read_freeze_file(self, frozen_file, fingerprint):
+    if not os.path.exists(frozen_file):
+      return LoadFromFreezeResult(valid=False)
+
+    with safe_open(frozen_file, 'rb') as ff:
+      # Read fingerprint
+      fingerprint_line = ff.readline()
+      _, fingerprint_from_file = fingerprint_line.split(':')
+      fingerprint_from_file = fingerprint_from_file.strip()
+      if fingerprint_from_file != fingerprint:
+        return LoadFromFreezeResult(valid=False)
+
+      result = LoadFromFreezeResult(valid=True)
+      # parse rest of file
+      ff.readline() # JAR_LIBRARIES line
+      current_thirdparty_target = None
+      for line in ff:
+        if line.startswith('    '): # i.e. it's a jar line
+          if current_thirdparty_target is None:
+            raise Exception('No way. can\'t deal with no current thirdparty.')
+
+          # ensure that they are None rather than empty string
+          org, name, rev, classifier, ext = [x or None for x in line.strip().split(':')]
+          resolved_jar = get_or_create_resolved_jar(org, name, rev, classifier, ext)
+
+          result.add_resolved_artifact_for_target(current_thirdparty_target, resolved_jar)
+        elif line.startswith('  '): # i.e. it's a jar lib line
+          spec = line.strip()
+          current_thirdparty_target = self.context.build_graph.get_target_from_spec(spec)
+      self.context.log.debug('  loaded from file')
+      return result
+
+
   def execute(self):
     """Resolves the specified confs for the configured targets and returns an iterator over
     tuples of (conf, jar path).
@@ -107,11 +158,11 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     #   get their excludes
     #   get the set of their 3rdparty libs
     #   print out the 3rdparty libs
-    #   
+    #
     #   resolve their closure and get the ivy info
     #
 
-    # rm frozen things 
+    # rm frozen things
     #    find . -name 'FREEZE.*' -exec rm {} \;
     jar_to_versions = defaultdict(lambda: defaultdict(lambda: 0))
     target_to_binaries = defaultdict(set)
@@ -137,7 +188,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
         fingerprint = cache_key.hash
         frozen_file = '{}/FREEZE.{}'.format(b.address.spec_path, b.address.target_name)
         thirdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
-        
+
         self.context.log.debug('  fingerprint: {}'.format(fingerprint))
 
         b_closure = b.closure()
@@ -147,35 +198,14 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
         sets_of_jar_libraries.add(frozenset(jar_library_targets))
 
 
-        loaded_from_file = False
-        if os.path.exists(frozen_file):
-          with safe_open(frozen_file, 'rb') as ff:
-            fingerprint_line = ff.readline()
-            _, fingerprint_from_file = fingerprint_line.split(':')
-            fingerprint_from_file = fingerprint_from_file.strip()
-            if fingerprint_from_file == fingerprint:
-              loaded_from_file = True
-              ff.readline() # JAR_LIBRARIES line
-              current_thirdparty_target = None
-              # parse rest of file
-              for line in ff:
-                # if it's a jar line
-                if line.startswith('    '):
-                  if current_thirdparty_target is None:
-                    raise Exception('No way. can\'t deal with no current thirdparty.')
-                  # ensure that they are None rather than empty string
-                  org, name, rev, classifier, ext = [x or None for x in line.strip().split(':')]
-                  resolved_jar = get_or_create_resolved_jar(org, name, rev, classifier, ext)
+        result = self.read_freeze_file(frozen_file, fingerprint)
 
-                  thirdparty_lib_to_resolved_versions[current_thirdparty_target].add(resolved_jar)
-                  jar_to_versions[resolved_jar.coordinate.id_without_rev][resolved_jar.coordinate.rev]+=1
-                # if it's a jar lib line
-                elif line.startswith('  '):
-                  spec = line.strip()
-                  current_thirdparty_target = self.context.build_graph.get_target_from_spec(spec)
-              self.context.log.debug('  loaded from file')
+        if result.successful():
+          binary_to_3rdparty_lib_to_resolved_versions[b] = result.target_to_resolved_jars
 
-        if not loaded_from_file:
+          for resolved_jar in result.resolved_jars:
+            jar_to_versions[resolved_jar.coordinate.id_without_rev][resolved_jar.coordinate.rev]+=1
+        else:
           self.context.log.debug(' resolving')
           confs = self.get_options().confs
           b_cp = ClasspathProducts(self.get_options().pants_workdir)
@@ -187,7 +217,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
                                          jar_library_targets=jar_library_targets,
                                          jar_to_versions=jar_to_versions,
                                          thirdparty_lib_to_resolved_versions=thirdparty_lib_to_resolved_versions)
-          
+
           with safe_open(frozen_file, 'wb') as f:
             f.write('FINGERPRINT: {}\n'.format(fingerprint))
             f.write('JAR_LIBRARIES:\n')
@@ -201,6 +231,9 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
       print('!!with exception!!: {}'.format(e))
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+
+
+
 
     with self.context.new_workunit('stats'):
       # summary
@@ -251,7 +284,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
           #break
           key = len(ext_dep_sets) if (len(ext_dep_sets) < 11) else '> 10'
           ct_targets_w_more_than_one_set[key] += 1
-        
+
 
       print()
       print('sets_of_jar_libraries:               {}'.format(len(sets_of_jar_libraries)) )
