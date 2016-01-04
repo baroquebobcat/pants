@@ -230,11 +230,17 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
         t_3rdparty_libs = [tt for tt in t.closure() if isinstance(tt, JarLibrary)]
         ext_dep_sets = set()
         for b in bs:
-          set_for_b = []
+          list_for_b = []
           erdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
           for tt in t_3rdparty_libs:
-            set_for_b.extend(erdparty_lib_to_resolved_versions[tt])
-          ext_dep_sets.add(frozenset(set_for_b))
+            list_for_b.extend(erdparty_lib_to_resolved_versions[tt])
+          set_for_b = frozenset(list_for_b)
+          for ext_set in ext_dep_sets:
+            if set_for_b <= ext_set:
+              break
+          else:
+            ext_dep_sets.add(set_for_b)
+
           if len(ext_dep_sets) > 10:
             break
         if len(ext_dep_sets) > 1:
