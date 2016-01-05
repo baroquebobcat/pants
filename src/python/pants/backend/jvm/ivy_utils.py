@@ -362,8 +362,8 @@ class IvyUtils(object):
 
     jars_by_key = OrderedDict()
     for jar in jars:
-      jars = jars_by_key.setdefault((jar.org, jar.name), [])
-      jars.append(jar)
+      jars_with_name = jars_by_key.setdefault((jar.org, jar.name), [])
+      jars_with_name.append(jar)
 
     dependencies = [cls._generate_jar_template(jars) for jars in jars_by_key.values()]
 
