@@ -142,6 +142,23 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       self.context.log.debug('  loaded from file')
       return result
 
+  def write_to_freeze_file(self, frozen_file, fingerprint, target_to_resolved_jars):
+    with safe_open(frozen_file, 'wb') as f:
+      f.write('FINGERPRINT: {}\n'.format(fingerprint))
+      f.write('JAR_LIBRARIES:\n')
+      for thirdparty_lib, jars in target_to_resolved_jars.items():
+        f.write('  {}\n'.format(thirdparty_lib.address.spec))
+        for r in jars:
+          # TODO hash of jars too*
+          f.write('    {!s}\n'.format(r.coordinate))
+
+
+  def gen_fingerprint(self, b, fingerprinter):
+    cache_key = self._cache_key_generator.key_for_target(b, transitive=True, fingerprint_strategy=fingerprinter)
+    if cache_key is None:
+      return None
+
+    return cache_key.hash
 
   def execute(self):
     """Resolves the specified confs for the configured targets and returns an iterator over
@@ -171,68 +188,66 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     thirdparty_lib_to_resolved_versions = defaultdict(set)
 
     executor = self.create_java_executor()
+    fingerprinter = IvyResolveFingerprintStrategy(self.get_options().confs)
 
     print('binaries: {}'.format(len(binaries)))
     bi = 0
-    fingerprinter = IvyResolveFingerprintStrategy(self.get_options().confs)
+
+    def inc_versions(result):
+      for resolved_jar in result.resolved_jars:
+        jar_to_versions[resolved_jar.coordinate.id_without_rev][resolved_jar.coordinate.rev]+=1
+
+    loaded_from_file_results = []
     try:
       for b in binaries:
-        bi +=1
+        bi += 1
         self.context.log.debug('Binary: {} ({}/{})'.format(b.address.spec, bi, len(binaries)))
 
-        cache_key = self._cache_key_generator.key_for_target(b, transitive=True, fingerprint_strategy=fingerprinter)
-        if cache_key is None:
-          self.context.log.debug('  No cache_key for it. Skipping')
+        fingerprint = self.gen_fingerprint(b, fingerprinter)
+        if fingerprint is None:
+          self.context.log.debug('  No fingerprint for it. Skipping')
           continue
 
-        fingerprint = cache_key.hash
-        frozen_file = '{}/FREEZE.{}'.format(b.address.spec_path, b.address.target_name)
-        thirdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
-
-        self.context.log.debug('  fingerprint: {}'.format(fingerprint))
 
         b_closure = b.closure()
         for t in b_closure:
           target_to_binaries[t].add(b)
+
+        frozen_file = '{}/FREEZE.{}'.format(b.address.spec_path, b.address.target_name)
+
+        self.context.log.debug('  fingerprint: {}'.format(fingerprint))
+
         jar_library_targets = [t for t in b_closure if isinstance(t, JarLibrary)]
         sets_of_jar_libraries.add(frozenset(jar_library_targets))
-
 
         result = self.read_freeze_file(frozen_file, fingerprint)
 
         if result.successful():
           binary_to_3rdparty_lib_to_resolved_versions[b] = result.target_to_resolved_jars
+          loaded_from_file_results.append(result)
 
-          for resolved_jar in result.resolved_jars:
-            jar_to_versions[resolved_jar.coordinate.id_without_rev][resolved_jar.coordinate.rev]+=1
+          inc_versions(result)
         else:
           self.context.log.debug(' resolving')
-          confs = self.get_options().confs
+
+          thirdparty_lib_to_resolved_versions = binary_to_3rdparty_lib_to_resolved_versions[b]
           b_cp = ClasspathProducts(self.get_options().pants_workdir)
-          resolve_hash_name = self.resolve(executor=executor,
+          resolve_result = self.resolve(executor=executor,
                                          targets=b_closure,
                                          classpath_products=b_cp,
-                                         confs=confs,
                                          extra_args=self._args,
-                                         jar_library_targets=jar_library_targets,
-                                         jar_to_versions=jar_to_versions,
-                                         thirdparty_lib_to_resolved_versions=thirdparty_lib_to_resolved_versions)
+                                         jar_library_targets=jar_library_targets)
 
-          with safe_open(frozen_file, 'wb') as f:
-            f.write('FINGERPRINT: {}\n'.format(fingerprint))
-            f.write('JAR_LIBRARIES:\n')
-            for thirdparty_lib, jars in thirdparty_lib_to_resolved_versions.items():
-              f.write('  {}\n'.format(thirdparty_lib.address.spec))
-              for r in jars:
-                # TODO hash of jars too*
-                f.write('    {!s}\n'.format(r.coordinate))
+          inc_versions(result)
+
+          self.write_to_freeze_file(frozen_file, fingerprint, thirdparty_lib_to_resolved_versions)
 
     except BaseException as e:
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
       print('!!with exception!!: {}'.format(e))
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
-
+    # collect all the load from FREEZE file artifacts and bulk fetch them
 
 
     with self.context.new_workunit('stats'):
@@ -295,8 +310,8 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       print('all targets           :              {}'.format(len(targets)))
 
   # CP + and modify from ivy_task_mixin
-  def resolve(self, executor, targets, classpath_products, confs=None, extra_args=None,
-              invalidate_dependents=False,jar_to_versions=None,thirdparty_lib_to_resolved_versions=None, jar_library_targets=None):
+  def resolve(self, executor, targets, classpath_products, conf=None, extra_args=None,
+              invalidate_dependents=False, jar_library_targets=None):
     """Resolves external classpath products (typically jars) for the given targets.
 
     :param executor: A java executor to run ivy with.
@@ -305,8 +320,8 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     :type targets: :class:`collections.Iterable` of :class:`pants.build_graph.target.Target`
     :param classpath_products: The classpath products to populate with the results of the resolve.
     :type classpath_products: :class:`pants.backend.jvm.tasks.classpath_products.ClasspathProducts`
-    :param confs: The ivy configurations to resolve; ('default',) by default.
-    :type confs: :class:`collections.Iterable` of string
+    :param conf: The ivy configuration to resolve; 'default' by default.
+    :type conf: :class:`collections.Iterable` of string
     :param extra_args: Any extra command line arguments to pass to ivy.
     :type extra_args: list of string
     :param bool invalidate_dependents: `True` to invalidate dependents of targets that needed to be
@@ -316,12 +331,10 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     """
 
     classpath_products.add_excludes_for_targets(targets)
-
-    confs = confs or ('default',)
-
-
-    if len(confs) > 1:
-      raise Exception("wut more than one conf. Impossible!")
+    if conf:
+      confs = (conf,)
+    else:
+      confs = ('default',)
 
     # After running ivy, we parse the resulting report, and record the dependencies for
     # all relevant targets (ie: those that have direct dependencies).
@@ -360,23 +373,21 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
                                               conf=cnf))
     # Build the 3rdparty classpath product.
 
-    for conf in confs:
-      ivy_info = self._parse_report(resolve_hash_name, conf)
-      if not ivy_info:
-        continue
-      ivy_jar_memo = {}
+    ivy_info = self._parse_report(resolve_hash_name, conf)
+    if not ivy_info:
+      return LoadFromFreezeResult(valid=False)
+    ivy_jar_memo = {}
+    result = LoadFromFreezeResult(valid=True)
+    for target in jar_library_targets:
+      # Add the artifacts from each dependency module.
+      raw_resolved_jars = ivy_info.get_resolved_jars_for_jar_library(target, memo=ivy_jar_memo)
+      for raw_resolved_jar in raw_resolved_jars:
+        resolved_jar = new_resolved_jar_with_symlink_path(target, conf, raw_resolved_jar)
+        result.add_resolved_artifact_for_target(target, resolved_jar)
 
-      for target in jar_library_targets:
-        # Add the artifacts from each dependency module.
-        raw_resolved_jars = ivy_info.get_resolved_jars_for_jar_library(target, memo=ivy_jar_memo)
-        resolved_jars = [new_resolved_jar_with_symlink_path(target, conf, raw_resolved_jar)
-                         for raw_resolved_jar in raw_resolved_jars]
-        thirdparty_lib_to_resolved_versions[target] = resolved_jars
-        for r in resolved_jars:
-          jar_to_versions[r.coordinate.id_without_rev][r.coordinate.rev]+=1
-        classpath_products.add_jars_for_targets([target], conf, resolved_jars)
+      #classpath_products.add_jars_for_targets([target], conf, resolved_jars)
 
-    return resolve_hash_name
+    return result
 
   def check_artifact_cache_for(self, invalidation_check):
     # Ivy resolution is an output dependent on the entire target set, and is not divisible
