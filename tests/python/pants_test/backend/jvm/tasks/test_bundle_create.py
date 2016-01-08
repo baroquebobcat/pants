@@ -13,14 +13,23 @@ from pants.backend.jvm.targets.jvm_app import JvmApp
 from pants.backend.jvm.targets.jvm_binary import JvmBinary
 from pants.backend.jvm.tasks.bundle_create import BundleCreate
 from pants.util.contextutil import open_zip
+from pants.util.dirutil import safe_file_dump
 from pants_test.backend.jvm.tasks.jvm_binary_task_test_base import JvmBinaryTaskTestBase
+from pants_test.testutils.file_test_util import check_zip_file_content
 
 
 class TestBundleCreate(JvmBinaryTaskTestBase):
 
+  FOO_JAR = {'Foo.class': '', 'foo.txt': ''}
+
   @classmethod
   def task_type(cls):
     return BundleCreate
+
+  def setUp(self):
+    super(TestBundleCreate, self).setUp()
+    # This is so that payload fingerprint can be computed.
+    safe_file_dump(os.path.join(self.build_root, 'foo/Foo.java'), '// dummy content')
 
   def test_jvm_bundle_products(self):
     jar_lib = self.make_target(spec='3rdparty/jvm/org/example:foo',
@@ -67,13 +76,15 @@ class TestBundleCreate(JvmBinaryTaskTestBase):
     self.assertEquals({dist_root: ['FooApp-bundle']}, product_data)
 
     bundle_root = os.path.join(dist_root, 'FooApp-bundle')
-    # TODO foo.txt and Foo.class are also under libs in a subdirectory, verify their existence
     self.assertEqual(sorted(['foo-binary.jar',
+                             'internal-libs/foo.foo-binary-0.jar',
                              'libs/org.example-foo-1.0.0.jar',
                              'libs/org.pantsbuild-bar-2.0.0.zip',
                              'libs/org.apache-baz-3.0.0-tests.jar',
                              'libs/org.gnu-gary-4.0.0.tar.gz']),
                      sorted(self.iter_files(bundle_root)))
+    check_zip_file_content(os.path.join(bundle_root, 'internal-libs/foo.foo-binary-0.jar'),
+                           self.FOO_JAR)
 
     # TODO verify Manifest's Class-Path
     with open_zip(os.path.join(bundle_root, 'foo-binary.jar')) as jar:
