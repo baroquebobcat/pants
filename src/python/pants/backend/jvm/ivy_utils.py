@@ -26,10 +26,17 @@ from pants.build_graph.target import Target
 from pants.util.dirutil import safe_mkdir, safe_open
 
 
+logger = logging.getLogger(__name__)
+
+
 IvyModule = namedtuple('IvyModule', ['ref', 'artifact', 'callers'])
 
 
-logger = logging.getLogger(__name__)
+Artifact = namedtuple('Artifact', ['name', 'type_', 'ext', 'url', 'classifier'])
+
+
+Dependency = namedtuple('DependencyAttributes', ['org', 'name', 'rev', 'mutable', 'force',
+                                                 'transitive'])
 
 
 class IvyResolveMappingError(Exception):
@@ -489,8 +496,6 @@ class IvyUtils(object):
 
   @classmethod
   def _generate_jar_template(cls, jars):
-    Dependency = namedtuple('DependencyAttributes', ['org', 'name', 'rev', 'mutable', 'force',
-                                                     'transitive'])
     global_dep_attributes = set(Dependency(org=jar.org,
                                            name=jar.name,
                                            rev=jar.rev,
@@ -514,7 +519,6 @@ class IvyUtils(object):
 
     any_have_url = False
 
-    Artifact = namedtuple('Artifact', ['name', 'type_', 'ext', 'url', 'classifier'])
     artifacts = OrderedDict()
     for jar in jars:
       ext = jar.ext
