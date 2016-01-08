@@ -116,9 +116,10 @@ class IvyInfo(object):
       return
 
     ref_unversioned = module.ref.unversioned
-    if ref_unversioned in self.refs_by_unversioned_refs:
-      raise IvyResolveMappingError('Already defined module {}, as rev {}!'
-                                   .format(ref_unversioned, module.ref.rev))
+    # Allow conflicts for now
+    #if ref_unversioned in self.refs_by_unversioned_refs:
+    #  raise IvyResolveMappingError('Already defined module {}, as rev {}!'
+    #                               .format(ref_unversioned, module.ref.rev))
     if module.ref in self.modules_by_ref:
       raise IvyResolveMappingError('Already defined module {}, would be overwritten!'
                                    .format(module.ref))
@@ -358,7 +359,7 @@ class IvyUtils(object):
     return ret
 
   @classmethod
-  def generate_ivy(cls, targets, jars, excludes, ivyxml, confs, resolve_hash_name=None):
+  def generate_ivy(cls, targets, jars, excludes, ivyxml, confs, resolve_hash_name=None, ignore_conflicts=False):
     if resolve_hash_name:
       org = IvyUtils.INTERNAL_ORG_NAME
       name = resolve_hash_name
@@ -369,7 +370,7 @@ class IvyUtils(object):
 
     jars_by_key = OrderedDict()
     for jar in jars:
-      jars_with_name = jars_by_key.setdefault((jar.org, jar.name), [])
+      jars_with_name = jars_by_key.setdefault((jar.org, jar.name, jar.rev), [])
       jars_with_name.append(jar)
 
     dependencies = [cls._generate_jar_template(jars) for jars in jars_by_key.values()]
@@ -394,7 +395,8 @@ class IvyUtils(object):
         extra_configurations=extra_configurations,
         dependencies=dependencies,
         excludes=excludes,
-        overrides=overrides)
+        overrides=overrides,
+        ignore_conflicts=ignore_conflicts)
 
     template_relpath = os.path.join('templates', 'ivy_utils', 'ivy.mustache')
     template_text = pkgutil.get_data(__name__, template_relpath)

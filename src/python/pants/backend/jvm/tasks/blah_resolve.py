@@ -198,6 +198,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
         jar_to_versions[resolved_jar.coordinate.id_without_rev][resolved_jar.coordinate.rev]+=1
 
     loaded_from_file_results = []
+    loaded_from_file_targets = []
     try:
       for b in binaries:
         bi += 1
@@ -225,6 +226,7 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
         if result.successful():
           binary_to_3rdparty_lib_to_resolved_versions[b] = result.target_to_resolved_jars
           loaded_from_file_results.append(result)
+          loaded_from_file_targets.append(b)
 
           inc_versions(result)
         else:
@@ -248,8 +250,56 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
     # collect all the load from FREEZE file artifacts and bulk fetch them
+    #loaded_from_file_results
+    # TODO cache here
+    resolve_hash_name='some-hash'
+    with IvyUtils.ivy_lock:
+      # construct jar dependencies from the resolved jars from the from file list
+      jjjars = set()
+      original_resolved_coords = set()
+      for result in loaded_from_file_results:
+        for j in result.resolved_jars:
+          jc = j.coordinate
+          original_resolved_coords.add(jc)
+          jjj = JarDependency(jc.org, jc.name,
+                              rev=jc.rev,
+                              #force=False,
+                              ext=jc.ext,
+                              #url=None,
+                              #apidocs=None,
+                              classifier=jc.classifier,
+                              #mutable=None,
+                              intransitive=True,
+                              #excludes=None
+                              )
+          jjjars.add(jjj)
+        #jjjars.update(result.resolved_jars)
+      ivyxml = os.path.join(self.context._buildroot, 'poc-ivy.xml')
+      IvyUtils.generate_ivy(loaded_from_file_targets,
+                            jjjars, 
+                            excludes=[], 
+                            ivyxml=ivyxml,
+                            confs=('default',),
+                            resolve_hash_name=resolve_hash_name,
+                            ignore_conflicts=True
+                            )
+      # resolve
+      self._really_exec_ivy(ivy=None,
+                            confs_to_resolve=('default',),
+                            ivyxml=ivyxml,
+                            executor=executor,
+                            workunit_name='resolve-frozen',
+                            args=[])
+    jar_targets = set()
+    for result in loaded_from_file_results:
+      jar_targets.update(result.target_to_resolved_jars.keys())
+    full_load_results = self.load2_result_from_report(jar_targets, resolve_hash_name, 'default')
+    full_coords = {j.coordinate for j in full_load_results.resolved_jars}
+    print('resolve coords == requested? {}'.format(full_coords == original_resolved_coords))
+    print('resolve - requested\n    {}'.format(full_coords - original_resolved_coords))
+    print('requested - resolved\n    {}'.format('\n    '.join(sorted(str(x) for x in original_resolved_coords - full_coords))))
 
-
+    return
     with self.context.new_workunit('stats'):
       # summary
       print()
@@ -354,6 +404,12 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
     # Record the ordered subset of jars that each jar_library/leaf depends on using
     # stable symlinks within the working copy.
 
+    # Build the 3rdparty classpath product.
+    return self.load_result_from_report(jar_library_targets, resolve_hash_name, conf, symlink_map)
+      #classpath_products.add_jars_for_targets([target], conf, resolved_jars)
+    #return result
+
+  def load_result_from_report(self, jar_library_targets, resolve_hash_name, conf, symlink_map={}):
     def new_resolved_jar_with_symlink_path(tgt, cnf, resolved_jar_without_symlink):
       # There is a focus on being lazy here to avoid `os.path.realpath` when we can.
       def candidate_cache_paths():
@@ -366,12 +422,13 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
                                 cache_path=resolved_jar_without_symlink.cache_path)
                     for cache_path in candidate_cache_paths() if cache_path in symlink_map)
       except StopIteration:
-        raise self.UnresolvedJarError('Jar {resolved_jar} in {spec} not resolved to the ivy '
-                                      'symlink map in conf {conf}.'
-                                      .format(spec=tgt.address.spec,
-                                              resolved_jar=resolved_jar_without_symlink.cache_path,
-                                              conf=cnf))
-    # Build the 3rdparty classpath product.
+
+        return resolved_jar_without_symlink
+        #raise self.UnresolvedJarError('Jar {resolved_jar} in {spec} not resolved to the ivy '
+        #                              'symlink map in conf {conf}.'
+        #                              .format(spec=tgt.address.spec,
+        #                                      resolved_jar=resolved_jar_without_symlink.cache_path,
+        #                                      conf=cnf))
 
     ivy_info = self._parse_report(resolve_hash_name, conf)
     if not ivy_info:
@@ -384,10 +441,49 @@ class BlahResolve(IvyTaskMixin, NailgunTask):
       for raw_resolved_jar in raw_resolved_jars:
         resolved_jar = new_resolved_jar_with_symlink_path(target, conf, raw_resolved_jar)
         result.add_resolved_artifact_for_target(target, resolved_jar)
+    return result
 
-      #classpath_products.add_jars_for_targets([target], conf, resolved_jars)
+
+  def load2_result_from_report(self, jar_library_targets, resolve_hash_name, conf, symlink_map={}):
+    def new_resolved_jar_with_symlink_path(tgt, cnf, resolved_jar_without_symlink):
+      # There is a focus on being lazy here to avoid `os.path.realpath` when we can.
+      def candidate_cache_paths():
+        yield resolved_jar_without_symlink.cache_path
+        yield os.path.realpath(resolved_jar_without_symlink.cache_path)
+
+      try:
+        return next(ResolvedJar(coordinate=resolved_jar_without_symlink.coordinate,
+                                pants_path=symlink_map[cache_path],
+                                cache_path=resolved_jar_without_symlink.cache_path)
+                    for cache_path in candidate_cache_paths() if cache_path in symlink_map)
+      except StopIteration:
+
+        return resolved_jar_without_symlink
+        #raise self.UnresolvedJarError('Jar {resolved_jar} in {spec} not resolved to the ivy '
+        #                              'symlink map in conf {conf}.'
+        #                              .format(spec=tgt.address.spec,
+        #                                      resolved_jar=resolved_jar_without_symlink.cache_path,
+        #                                      conf=cnf))
+
+    ivy_info = self._parse_report(resolve_hash_name, conf)
+    if not ivy_info:
+      return LoadFromFreezeResult(valid=False)
+
+    result = LoadFromFreezeResult(valid=True)
+
+
+    for jar_ref, artifacts in ivy_info._artifacts_by_ref.items():
+      for jar_path in artifacts:
+        result.add_resolved_artifact_for_target(None, 
+                                                ResolvedJar(coordinate=M2Coordinate(org=jar_ref.org,
+                                                                                    name=jar_ref.name,
+                                                                                    rev=jar_ref.rev,
+                                                                                    classifier=jar_ref.classifier,
+                                                                                    ext=jar_ref.ext),
+                                                            cache_path=jar_path))
 
     return result
+
 
   def check_artifact_cache_for(self, invalidation_check):
     # Ivy resolution is an output dependent on the entire target set, and is not divisible
