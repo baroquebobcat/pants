@@ -6,6 +6,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 from pants.backend.jvm.targets.jvm_prep_command import JvmPrepCommand
+from pants.backend.jvm.tasks.classpath_products import CompileClasspath
 from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.base.exceptions import TaskError
 from pants.base.workunit import WorkUnit, WorkUnitLabel
@@ -53,7 +54,7 @@ class RunJvmPrepCommandBase(Task):
     :API: public
     """
     super(RunJvmPrepCommandBase, cls).prepare(options, round_manager)
-    round_manager.require_data('compile_classpath')
+    round_manager.require_data(CompileClasspath)
     if not cls.classpath_product_only:
       round_manager.require_data('runtime_classpath')
 
@@ -68,7 +69,7 @@ class RunJvmPrepCommandBase(Task):
 
     targets = self.context.targets(postorder=True,  predicate=self.runnable_prep_cmd)
 
-    compile_classpath = self.context.products.get_data('compile_classpath')
+    compile_classpath = self.context.products.get_data(CompileClasspath)
     classpath_products = self.context.products.get_data('runtime_classpath', compile_classpath.copy)
 
     with self.context.new_workunit(name='jvm_prep_command', labels=[WorkUnitLabel.PREP]) as workunit:

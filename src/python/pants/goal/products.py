@@ -36,6 +36,9 @@ class UnionProducts(object):
     # A map of target to OrderedSet of product members.
     self._products_by_target = products_by_target or defaultdict(OrderedSet)
 
+  def __repr__(self):
+    return 'UnionProducts(products_by_target={})'.format(self._products_by_target)
+
   def copy(self):
     """Returns a copy of this UnionProducts.
 

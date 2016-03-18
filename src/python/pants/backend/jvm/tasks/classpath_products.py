@@ -157,6 +157,9 @@ class ClasspathProducts(object):
     self._excludes = excludes or UnionProducts()
     self._pants_workdir = pants_workdir
 
+  def __repr__(self):
+    return '{}(classpaths={!r},excludes={!r})'.format(type(self), self._classpaths, self._excludes)
+
   @staticmethod
   def init_func(pants_workdir):
     """
@@ -350,3 +353,19 @@ class ClasspathProducts(object):
 
   def __ne__(self, other):
     return not self == other
+
+
+class CompileClasspath(ClasspathProducts):
+  """"""
+
+
+class RuntimeClasspath(ClasspathProducts):
+  """"""
+
+
+class SourceClasspath(ClasspathProducts):
+  """"""
+
+
+class JavadocClasspath(ClasspathProducts):
+  """"""

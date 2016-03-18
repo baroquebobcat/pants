@@ -154,7 +154,7 @@ class IvyFetchStep(IvyResolutionStep):
     except Exception as e:
       logger.debug('Failed to load {}: {}'.format(self.frozen_resolve_file, e))
       return NO_RESOLVE_RUN_RESULT
-    return self._load_from_fetch(frozen_resolutions)
+    return self._load_from_fetch(targets, frozen_resolutions)
 
   def exec_and_load(self, executor, extra_args, targets, jvm_options, workunit_name,
                        workunit_factory):
@@ -167,7 +167,7 @@ class IvyFetchStep(IvyResolutionStep):
 
     self._do_fetch(executor, extra_args, frozen_resolutions, jvm_options,
                            workunit_name, workunit_factory)
-    result = self._load_from_fetch(frozen_resolutions)
+    result = self._load_from_fetch(targets, frozen_resolutions)
 
     if not result.all_linked_artifacts_exist():
       raise IvyResolveMappingError(
@@ -175,9 +175,10 @@ class IvyFetchStep(IvyResolutionStep):
                                                              result))
     return result
 
-  def _load_from_fetch(self, frozen_resolutions):
+  def _load_from_fetch(self, targets, frozen_resolutions):
     artifact_paths, symlink_map = self._construct_and_load_symlink_map()
-    return IvyFetchResolveResult(artifact_paths,
+    return IvyFetchResolveResult(targets,
+                                 artifact_paths,
                                  symlink_map,
                                  self.hash_name,
                                  self.workdir_reports_by_conf,
@@ -225,7 +226,8 @@ class IvyResolveStep(IvyResolutionStep):
 
   def load(self, targets):
     artifact_paths, symlink_map = self._construct_and_load_symlink_map()
-    return IvyResolveResult(artifact_paths,
+    return IvyResolveResult(targets,
+                            artifact_paths,
                             symlink_map,
                             self.hash_name,
                             self.workdir_reports_by_conf)
@@ -240,7 +242,7 @@ class IvyResolveStep(IvyResolutionStep):
         'Some artifacts were not linked to {} for {}'.format(self.global_ivy_workdir,
                                                              result))
 
-    frozen_resolutions_by_conf = result.get_frozen_resolutions_by_conf(targets)
+    frozen_resolutions_by_conf = result.get_frozen_resolutions_by_conf()
     FrozenResolution.dump_to_file(self.frozen_resolve_file, frozen_resolutions_by_conf)
     return result
 
@@ -377,7 +379,8 @@ class IvyResolveResult(object):
   and the targets that requested them and the hash name of the resolve.
   """
 
-  def __init__(self, resolved_artifact_paths, symlink_map, resolve_hash_name, reports_by_conf):
+  def __init__(self, input_targets, resolved_artifact_paths, symlink_map, resolve_hash_name, reports_by_conf):
+    self.targets = input_targets
     self._reports_by_conf = reports_by_conf
     self.resolved_artifact_paths = resolved_artifact_paths
     self.resolve_hash_name = resolve_hash_name
@@ -405,22 +408,21 @@ class IvyResolveResult(object):
     """
     return self._reports_by_conf.get(conf)
 
-  def get_frozen_resolutions_by_conf(self, targets):
+  def get_frozen_resolutions_by_conf(self):
     frozen_resolutions_by_conf = OrderedDict()
     for conf in self._reports_by_conf:
       frozen_resolution = FrozenResolution()
-      for target, resolved_jars in self.resolved_jars_for_each_target(conf, targets):
+      for target, resolved_jars in self.resolved_jars_for_each_target(conf):
         frozen_resolution.add_resolved_jars(target, resolved_jars)
       frozen_resolutions_by_conf[conf] = frozen_resolution
     return frozen_resolutions_by_conf
 
-  def resolved_jars_for_each_target(self, conf, targets):
+  def resolved_jars_for_each_target(self, conf):
     """Yields the resolved jars for each passed JarLibrary.
 
     If there is no report for the requested conf, yields nothing.
 
     :param conf: The ivy conf to load jars for.
-    :param targets: The collection of JarLibrary targets to find resolved jars for.
     :yield: target, resolved_jars
     :raises IvyTaskMixin.UnresolvedJarError
     """
@@ -429,7 +431,7 @@ class IvyResolveResult(object):
     if not ivy_info:
       return
 
-    jar_library_targets = [t for t in targets if isinstance(t, JarLibrary)]
+    jar_library_targets = [t for t in self.targets if isinstance(t, JarLibrary)]
     ivy_jar_memo = {}
     for target in jar_library_targets:
       # Add the artifacts from each dependency module.
@@ -480,9 +482,9 @@ class IvyResolveResult(object):
 class IvyFetchResolveResult(IvyResolveResult):
   """A resolve result that uses the frozen resolution to look up dependencies."""
 
-  def __init__(self, resolved_artifact_paths, symlink_map, resolve_hash_name, reports_by_conf,
+  def __init__(self, input_targets, resolved_artifact_paths, symlink_map, resolve_hash_name, reports_by_conf,
                frozen_resolutions):
-    super(IvyFetchResolveResult, self).__init__(resolved_artifact_paths, symlink_map,
+    super(IvyFetchResolveResult, self).__init__(input_targets, resolved_artifact_paths, symlink_map,
                                                 resolve_hash_name, reports_by_conf)
     self._frozen_resolutions = frozen_resolutions
 
@@ -490,7 +492,7 @@ class IvyFetchResolveResult(IvyResolveResult):
     return self._frozen_resolutions[conf].target_to_resolved_coordinates.get(target)
 
 
-NO_RESOLVE_RUN_RESULT = IvyResolveResult([], {}, None, {})
+NO_RESOLVE_RUN_RESULT = IvyResolveResult([], [], {}, None, {})
 
 
 IvyModule = namedtuple('IvyModule', ['ref', 'artifact', 'callers'])

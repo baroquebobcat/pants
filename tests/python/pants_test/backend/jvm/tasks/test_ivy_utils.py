@@ -611,16 +611,15 @@ class IvyUtilsResolveStepsTest(BaseTest):
 
   def test_missing_symlinked_jar_in_candidates(self):
     empty_symlink_map = {}
-    result = IvyResolveResult(['non-existent-file-location'], empty_symlink_map, 'hash-name',
+    targets = [self.make_target('t', JarLibrary, jars=[JarDependency('org1', 'name1')])]
+    result = IvyResolveResult(targets,
+                              ['non-existent-file-location'], empty_symlink_map, 'hash-name',
                               {'default':
                                  self.ivy_report_path('ivy_utils_resources/report_with_diamond.xml')
                                })
     with self.assertRaises(IvyResolveMappingError):
-      list(result.resolved_jars_for_each_target('default',
-                                                [self.make_target('t', JarLibrary,
-                                                                  jars=[JarDependency('org1',
-                                                                                      'name1')])
-                                                 ]))
+
+      list(result.resolved_jars_for_each_target('default'))
 
   def ivy_report_path(self, rel_path):
     return os.path.join('tests/python/pants_test/backend/jvm/tasks', rel_path)

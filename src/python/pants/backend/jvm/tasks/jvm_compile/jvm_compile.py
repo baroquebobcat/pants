@@ -14,6 +14,7 @@ from pants.backend.jvm.subsystems.java import Java
 from pants.backend.jvm.subsystems.jvm_platform import JvmPlatform
 from pants.backend.jvm.subsystems.scala_platform import ScalaPlatform
 from pants.backend.jvm.targets.jar_library import JarLibrary
+from pants.backend.jvm.tasks.classpath_products import CompileClasspath
 from pants.backend.jvm.tasks.classpath_util import ClasspathUtil
 from pants.backend.jvm.tasks.jvm_compile.compile_context import CompileContext
 from pants.backend.jvm.tasks.jvm_compile.execution_graph import (ExecutionFailure, ExecutionGraph,
@@ -98,7 +99,8 @@ class JvmCompile(NailgunTaskBase):
              help='Pass these args to the compiler.')
 
     register('--confs', advanced=True, type=list_option, default=['default'],
-             help='Compile for these Ivy confs.')
+             help='Compile for these Ivy confs.',
+             deprecated_hint='reducing the spread of ivy concepts.')
 
     # TODO: Stale analysis should be automatically ignored via Task identities:
     # https://github.com/pantsbuild/pants/issues/1351
@@ -160,7 +162,7 @@ class JvmCompile(NailgunTaskBase):
   def prepare(cls, options, round_manager):
     super(JvmCompile, cls).prepare(options, round_manager)
 
-    round_manager.require_data('compile_classpath')
+    round_manager.require_data(CompileClasspath)
 
     # Require codegen we care about
     # TODO(John Sirois): roll this up in Task - if the list of labels we care about for a target
@@ -351,7 +353,7 @@ class JvmCompile(NailgunTaskBase):
       return
 
     # Clone the compile_classpath to the runtime_classpath.
-    compile_classpath = self.context.products.get_data('compile_classpath')
+    compile_classpath = self.context.products.get_data(CompileClasspath)
     classpath_product = self.context.products.get_data('runtime_classpath', compile_classpath.copy)
 
     fingerprint_strategy = self._fingerprint_strategy(classpath_product)

@@ -12,13 +12,13 @@ from textwrap import dedent
 
 from pants.backend.jvm.ivy_utils import IvyUtils
 from pants.backend.jvm.targets.jar_dependency import JarDependency
-from pants.backend.jvm.tasks.classpath_products import ClasspathProducts
+from pants.backend.jvm.tasks.classpath_products import (ClasspathProducts, CompileClasspath,
+                                                        JavadocClasspath, SourceClasspath)
 from pants.backend.jvm.tasks.ivy_task_mixin import IvyTaskMixin
 from pants.backend.jvm.tasks.nailgun_task import NailgunTask
 from pants.binaries import binary_util
 from pants.invalidation.cache_manager import VersionedTargetSet
 from pants.util.dirutil import safe_mkdir
-from pants.util.memo import memoized_property
 from pants.util.strutil import safe_shlex_split
 
 
@@ -45,7 +45,10 @@ class IvyResolve(IvyTaskMixin, NailgunTask):
              fingerprint=True,
              help='Pass these extra args to ivy.')
     register('--confs', action='append', default=['default'],
-             help='Pass a configuration to ivy in addition to the default ones.')
+             help='Pass a configuration to ivy in addition to the default ones.',
+             deprecated_hint='confs is deprecated in favor of not exposing confs outside ivy',
+             # deprecated_version='0.0.75', removal_version='0.0.79',
+             )
     register('--mutable-pattern',
              fingerprint=True,
              help='If specified, all artifact revisions matching this pattern will be treated as '
@@ -58,7 +61,10 @@ class IvyResolve(IvyTaskMixin, NailgunTask):
 
   @classmethod
   def product_types(cls):
-    return ['compile_classpath']
+    return ['compile_classpath',
+            CompileClasspath,
+            SourceClasspath,
+            JavadocClasspath]
 
   @classmethod
   def prepare(cls, options, round_manager):
@@ -83,13 +89,51 @@ class IvyResolve(IvyTaskMixin, NailgunTask):
     """
     executor = self.create_java_executor()
     targets = self.context.targets()
-    compile_classpath = self.context.products.get_data('compile_classpath',
-        init_func=ClasspathProducts.init_func(self.get_options().pants_workdir))
-    results = self.resolve(executor=executor,
-                                      targets=targets,
-                                      classpath_products=compile_classpath,
-                                      confs=self.get_options().confs,
-                                      extra_args=self._args)
+
+    # While deprecated, support deprecation
+    opt_confs = self.get_options().confs
+    if opt_confs and list(opt_confs) != ['default']:
+      confs = opt_confs
+    else:
+      confs = ['default']
+
+    requires_source = self.context.products.is_required_data(SourceClasspath)
+    requires_javadoc = self.context.products.is_required_data(JavadocClasspath)
+    if requires_source:
+      confs.append('sources')
+    if requires_javadoc:
+      confs.append('javadocs')
+
+    results = self.real_resolve(targets, confs, executor, self._args)
+
+    # TODO complain with a deprecation notice.
+    if self.context.products.is_required_data('compile_classpath'):
+      legacy_compile_classpath = self.context.products.get_data('compile_classpath',
+                                                                init_func=ClasspathProducts.init_func(self.get_options().pants_workdir))
+      self.inflate_classpath_product_from_results(legacy_compile_classpath,
+                                                   confs,
+                                                   results)
+
+    if self.context.products.is_required_data(CompileClasspath):
+      compile_classpath = self.context.products.get_data(CompileClasspath,
+                                                         init_func=CompileClasspath.init_func(self.get_options().pants_workdir))
+      self.inflate_classpath_product_from_results(compile_classpath,
+                                                   ('default',),
+                                                   results)
+
+    if requires_source:
+      source_classpath = self.context.products.get_data(SourceClasspath,
+                                                   init_func=SourceClasspath.init_func(self.get_options().pants_workdir))
+      self.inflate_classpath_product_from_results(source_classpath,
+                                                 ('sources',),
+                                                 results)
+    if requires_javadoc:
+      javadoc_classpath = self.context.products.get_data(JavadocClasspath,
+                                                   init_func=JavadocClasspath.init_func(self.get_options().pants_workdir))
+      self.inflate_classpath_product_from_results(javadoc_classpath,
+                                                 ('javadoc',),
+                                                 results)
+
     if self._report:
       for result in results:
         self._generate_ivy_report(result)

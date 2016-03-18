@@ -7,6 +7,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 from abc import abstractmethod
 
+from pants.backend.jvm.tasks.classpath_products import CompileClasspath
 from pants.option.custom_types import list_option
 from pants.task.task import Task
 
@@ -32,7 +33,7 @@ class ResourcesTask(Task):
 
   @classmethod
   def prepare(cls, options, round_manager):
-    round_manager.require_data('compile_classpath')
+    round_manager.require_data(CompileClasspath)
 
   @property
   def cache_target_dirs(self):
@@ -43,7 +44,7 @@ class ResourcesTask(Task):
     # TODO: Rewrite those tests. execute() is not supposed to return anything.
     processed_targets = []
 
-    compile_classpath = self.context.products.get_data('compile_classpath')
+    compile_classpath = self.context.products.get_data(CompileClasspath)
     runtime_classpath = self.context.products.get_data('runtime_classpath', compile_classpath.copy)
 
     all_relevant_resources_targets = self.find_all_relevant_resources_targets()

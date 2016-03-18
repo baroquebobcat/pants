@@ -19,7 +19,7 @@ from pants.backend.jvm.targets.jvm_app import JvmApp
 from pants.backend.jvm.targets.jvm_binary import JvmBinary
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.backend.jvm.targets.scala_library import ScalaLibrary
-from pants.backend.jvm.tasks.classpath_products import ClasspathProducts
+from pants.backend.jvm.tasks.classpath_products import ClasspathProducts, CompileClasspath
 from pants.backend.project_info.tasks.export import Export
 from pants.backend.python.register import build_file_aliases as register_python
 from pants.base.exceptions import TaskError
@@ -166,10 +166,10 @@ class ExportTest(InterpreterCacheTestMixin, ConsoleTaskTestBase):
 
   def execute_export(self, *specs):
     context = self.context(target_roots=[self.target(spec) for spec in specs])
-    context.products.safe_create_data('compile_classpath', init_func=ClasspathProducts.init_func(self.pants_workdir))
+    context.products.safe_create_data(CompileClasspath, init_func=ClasspathProducts.init_func(self.pants_workdir))
     task = self.create_task(context)
     return list(task.console_output(list(task.context.targets()),
-                                    context.products.get_data('compile_classpath')))
+                                    context.products.get_data(CompileClasspath)))
 
   def execute_export_json(self, *specs):
     return json.loads(''.join(self.execute_export(*specs)))

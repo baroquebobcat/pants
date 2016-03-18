@@ -7,7 +7,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 import os
 
-from pants.backend.jvm.tasks.classpath_products import ClasspathProducts
+from pants.backend.jvm.tasks.classpath_products import ClasspathProducts, CompileClasspath
 from pants.backend.jvm.tasks.resources_task import ResourcesTask
 from pants.base.fingerprint_strategy import DefaultFingerprintStrategy
 from pants.base.payload import Payload
@@ -44,7 +44,7 @@ class ResourcesTaskTestBase(TaskTestBase):
   def create_resources_task(self, target_roots=None, **options):
     self.set_options(**options)
     context = self.context(target_roots=target_roots)
-    context.products.safe_create_data('compile_classpath', init_func=ClasspathProducts.init_func(self.pants_workdir))
+    context.products.safe_create_data(CompileClasspath, init_func=ClasspathProducts.init_func(self.pants_workdir))
     return self.create_task(context)
 
   def create_target(self, spec, contents=None, **kwargs):

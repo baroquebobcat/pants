@@ -129,17 +129,37 @@ class IvyTaskMixin(TaskBase):
     :returns: The results of each of the resolves run by this call.
     :rtype: list of IvyResolveResult
     """
+    results = self.real_resolve(targets, confs, executor, extra_args, invalidate_dependents)
+    self.inflate_classpath_product_from_results(classpath_products, confs, results)
+
+
+    return results
+
+  def inflate_classpath_product_from_results(self, classpath_products, confs, results):
+    confs = confs or ('default',)
+    for result in results:
+      if not result.has_resolved_artifacts:
+        continue
+      # After running ivy, we update the classpath products with the excludes from the targets.
+      # We also collect the resolved jar information for each target and update the classpath
+      # appropriately.
+      classpath_products.add_excludes_for_targets(result.targets)
+      for conf in confs:
+        for target, resolved_jars in result.resolved_jars_for_each_target(conf):
+          classpath_products.add_jars_for_targets([target], conf, resolved_jars)
+
+  def real_resolve(self, targets, confs, executor, extra_args,
+                    invalidate_dependents=False):
     confs = confs or ('default',)
     targets_by_sets = JarDependencyManagement.global_instance().targets_by_artifact_set(targets)
     results = []
     for artifact_set, target_subset in targets_by_sets.items():
       results.append(self._resolve_subset(executor,
-                                                     target_subset,
-                                                     classpath_products,
-                                                     confs=confs,
-                                                     extra_args=extra_args,
-                                                     invalidate_dependents=invalidate_dependents,
-                                                     pinned_artifacts=artifact_set))
+                                          target_subset,
+                                          confs=confs,
+                                          extra_args=extra_args,
+                                          invalidate_dependents=invalidate_dependents,
+                                          pinned_artifacts=artifact_set))
     return results
 
   def ivy_classpath(self, targets, silent=True, workunit_name=None):
@@ -153,7 +173,7 @@ class IvyTaskMixin(TaskBase):
     result = self._ivy_resolve(targets, silent=silent, workunit_name=workunit_name)
     return result.resolved_artifact_paths
 
-  def _resolve_subset(self, executor, targets, classpath_products, confs=None, extra_args=None,
+  def _resolve_subset(self, executor, targets, confs=None, extra_args=None,
               invalidate_dependents=False, pinned_artifacts=None):
     result = self._ivy_resolve(
       targets,
@@ -169,13 +189,6 @@ class IvyTaskMixin(TaskBase):
       # There was no resolve to do, so no 3rdparty deps to process below.
       return result
 
-    # After running ivy, we update the classpath products with the excludes from the targets.
-    # We also collect the resolved jar information for each target and update the classpath
-    # appropriately.
-    classpath_products.add_excludes_for_targets(targets)
-    for conf in confs:
-      for target, resolved_jars in result.resolved_jars_for_each_target(conf, targets):
-        classpath_products.add_jars_for_targets([target], conf, resolved_jars)
 
     return result
 

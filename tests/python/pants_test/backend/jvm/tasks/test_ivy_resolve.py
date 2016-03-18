@@ -21,6 +21,7 @@ from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.targets.java_library import JavaLibrary
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.backend.jvm.targets.managed_jar_dependencies import ManagedJarDependencies
+from pants.backend.jvm.tasks.classpath_products import CompileClasspath
 from pants.backend.jvm.tasks.ivy_resolve import IvyResolve
 from pants.backend.jvm.tasks.ivy_task_mixin import IvyResolveFingerprintStrategy
 from pants.ivy.bootstrapper import Bootstrapper
@@ -53,8 +54,9 @@ class IvyResolveTest(JvmToolTaskTestBase):
   def resolve(self, targets):
     """Given some targets, execute a resolve, and return the resulting compile_classpath."""
     context = self.context(target_roots=targets)
+    context.products.require_data(CompileClasspath)
     self.create_task(context).execute()
-    return context.products.get_data('compile_classpath')
+    return context.products.get_data(CompileClasspath)
 
   #
   # Test section
@@ -81,6 +83,7 @@ class IvyResolveTest(JvmToolTaskTestBase):
     winning_lib = self.make_target('//:b', JarLibrary, jars=[winning_dep])
     # Confirm that the same artifact was added to each target.
     context = self.context(target_roots=[losing_lib, winning_lib])
+    context.products.require_data(CompileClasspath)
 
     def artifact_path(name):
       return os.path.join(self.pants_workdir, 'ivy_artifact', name)
@@ -126,7 +129,7 @@ class IvyResolveTest(JvmToolTaskTestBase):
     symlink_map = {artifact_path('bogus0'): artifact_path('bogus0'),
                    artifact_path('bogus1'): artifact_path('bogus1'),
                    artifact_path('unused'): artifact_path('unused')}
-    result = IvyResolveResult([], symlink_map, 'some-key-for-a-and-b', {})
+    result = IvyResolveResult([losing_lib, winning_lib], [], symlink_map, 'some-key-for-a-and-b', {})
     result._ivy_info_for= mock_ivy_info_for
 
     def mock_ivy_resolve(*args, **kwargs):
@@ -136,7 +139,8 @@ class IvyResolveTest(JvmToolTaskTestBase):
     task._ivy_resolve = mock_ivy_resolve
 
     task.execute()
-    compile_classpath = context.products.get_data('compile_classpath', None)
+
+    compile_classpath = context.products.get_data(CompileClasspath, None)
     losing_cp = compile_classpath.get_for_target(losing_lib)
     winning_cp = compile_classpath.get_for_target(winning_lib)
     self.assertEquals(losing_cp, winning_cp)
@@ -242,8 +246,8 @@ class IvyResolveTest(JvmToolTaskTestBase):
 
       task.execute()
 
-      self.assertEqual(initial_context.products.get_data('compile_classpath'),
-                       load_context.products.get_data('compile_classpath'))
+      self.assertEqual(initial_context.products.get_data(CompileClasspath),
+                       load_context.products.get_data(CompileClasspath))
 
   def test_when_symlink_cachepath_fails_on_load_due_to_missing_file_trigger_resolve(self):
     jar_lib = self._make_junit_target()
@@ -291,8 +295,8 @@ class IvyResolveTest(JvmToolTaskTestBase):
     task._do_resolve = self.fail
     task.execute()
 
-    self.assertEqual(context1.products.get_data('compile_classpath'),
-                     context2.products.get_data('compile_classpath'))
+    self.assertEqual(context1.products.get_data(CompileClasspath),
+                     context2.products.get_data(CompileClasspath))
 
   def test_invalid_frozen_resolve_file_runs_resolve(self):
     junit_jar_lib = self._make_junit_target()
