@@ -20,8 +20,8 @@ from pants.backend.jvm.targets.jar_library import JarLibrary
 from pants.backend.jvm.targets.jvm_app import JvmApp
 from pants.backend.jvm.targets.jvm_target import JvmTarget
 from pants.backend.jvm.targets.scala_library import ScalaLibrary
-from pants.backend.jvm.tasks.classpath_products import ClasspathProducts
-from pants.backend.jvm.tasks.ivy_task_mixin import IvyTaskMixin
+from pants.backend.jvm.tasks.classpath_products import (CompileClasspath, JavadocClasspath,
+                                                        SourceClasspath)
 from pants.backend.python.targets.python_requirement_library import PythonRequirementLibrary
 from pants.backend.python.targets.python_target import PythonTarget
 from pants.backend.python.tasks.python_task import PythonTask
@@ -29,7 +29,6 @@ from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
 from pants.build_graph.resources import Resources
 from pants.java.distribution.distribution import DistributionLocator
-from pants.java.executor import SubprocessExecutor
 from pants.option.errors import OptionsError
 from pants.option.ranked_value import RankedValue
 from pants.task.console_task import ConsoleTask
@@ -38,7 +37,7 @@ from pants.util.memo import memoized_property
 
 # Changing the behavior of this task may affect the IntelliJ Pants plugin.
 # Please add tdesai to reviews for this file.
-class ExportTask(IvyTaskMixin, PythonTask):
+class ExportTask(PythonTask):
   """Base class for generating a json-formattable blob of data about the target graph.
 
   Subclasses can invoke the generate_targets_map method to get a dictionary of plain datastructures
@@ -113,26 +112,12 @@ class ExportTask(IvyTaskMixin, PythonTask):
       round_manager.require_data('java')
       round_manager.require_data('scala')
 
-  def resolve_jars(self, targets):
-    executor = SubprocessExecutor(DistributionLocator.cached())
-    confs = []
-    if self.get_options().libraries:
-      confs.append('default')
-    if self.get_options().libraries_sources:
-      confs.append('sources')
-    if self.get_options().libraries_javadocs:
-      confs.append('javadoc')
-
-    self._support_current_pants_plugin_options_usage()
-
-    compile_classpath = None
-    if confs:
-      compile_classpath = ClasspathProducts(self.get_options().pants_workdir)
-      self.resolve(executor=executor,
-                   targets=targets,
-                   classpath_products=compile_classpath,
-                   confs=confs)
-    return compile_classpath
+    if options.libraries:
+      round_manager.require_data(CompileClasspath)
+    if options.libraries_sources:
+      round_manager.require_data(SourceClasspath)
+    if options.libraries_javadocs:
+      round_manager.require_data(JavadocClasspath)
 
   # TODO: This is a terrible hack for backwards-compatibility with the pants-plugin.
   # Kill it when https://github.com/pantsbuild/intellij-pants-plugin/issues/46 is resolved,
@@ -164,7 +149,7 @@ class ExportTask(IvyTaskMixin, PythonTask):
     if self.get_options().libraries:
       # NB(gmalmquist): This supports mocking the classpath_products in tests.
       if classpath_products is None:
-        classpath_products = self.resolve_jars(targets)
+        classpath_products =  self.context.products.get(CompileClasspath)
     else:
       classpath_products = None
 
@@ -309,7 +294,7 @@ class ExportTask(IvyTaskMixin, PythonTask):
 
     return graph_info
 
-  def _resolve_jars_info(self, targets, classpath_products):
+  def _resolve_jars_info(self, targets, compile_classpath):
     """Consults ivy_jar_products to export the external libraries.
 
     :return: mapping of jar_id -> { 'default'     : <jar_file>,
@@ -319,7 +304,7 @@ class ExportTask(IvyTaskMixin, PythonTask):
                                   }
     """
     mapping = defaultdict(dict)
-    jar_products = classpath_products.get_artifact_classpath_entries_for_targets(
+    jar_products = compile_classpath.get_artifact_classpath_entries_for_targets(
       targets, respect_excludes=False)
     for conf, jar_entry in jar_products:
       conf = jar_entry.coordinate.classifier or 'default'
