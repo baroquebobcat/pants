@@ -65,7 +65,7 @@ class EngineTest(unittest.TestCase):
     with self.multiprocessing_engine() as engine:
       self.assert_engine(engine)
 
-      cache_stats = engine._cache.get_stats()
+      cache_stats = self.cache.get_stats()
       # First run all misses.
       self.assertTrue(cache_stats.hits == 0)
 
@@ -82,5 +82,5 @@ class EngineTest(unittest.TestCase):
       self.assertTrue(cache_stats.hits > 0)
 
       # Ensure we cache no more than what can be cached.
-      for request, result in engine._cache.items():
+      for request, result in self.cache.items():
         self.assertTrue(request[0].is_cacheable)

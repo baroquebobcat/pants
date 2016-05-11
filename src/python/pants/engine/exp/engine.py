@@ -15,7 +15,7 @@ from twitter.common.collections.orderedset import OrderedSet
 
 from pants.base.exceptions import TaskError
 from pants.engine.exp.objects import SerializationError
-from pants.engine.exp.processing import StatefulPool
+from pants.engine.exp.processing import StatefulPool, StatefulThreadPool
 from pants.engine.exp.storage import Cache, Storage
 from pants.util.meta import AbstractClass
 from pants.util.objects import datatype
@@ -182,6 +182,15 @@ def _process_initializer(node_builder, storage):
   return (node_builder, Storage.clone(storage))
 
 
+def _thread_initializer(node_builder, storage):
+  """Another picklable top-level function that provides multi-processes' initial states.
+
+  States are returned as a tuple. States are `Closable` so they can be cleaned up once
+  processes are done.
+  """
+  return (node_builder, storage)
+
+
 class LocalMultiprocessEngine(Engine):
   """An engine that runs tasks locally and in parallel when possible using a process pool."""
 
@@ -279,4 +288,104 @@ class LocalMultiprocessEngine(Engine):
 
   def close(self):
     super(LocalMultiprocessEngine, self).close()
+    self._pool.close()
+
+
+class LocalMultithreadingEngine(Engine):
+  """An engine that runs tasks locally and in parallel when possible using a thread pool."""
+
+  def __init__(self, scheduler, storage, cache=None, pool_size=None, debug=True):
+    """
+    :param scheduler: The local scheduler for creating execution graphs.
+    :type scheduler: :class:`pants.engine.exp.scheduler.LocalScheduler`
+    :param storage: The storage instance for serializables keyed by their hashes.
+    :type storage: :class:`pants.engine.exp.storage.Storage`
+    :param cache: The cache instance for storing execution results, by default it uses the same
+      Storage instance if not specified.
+    :type cache: :class:`pants.engine.exp.storage.Cache`
+    :param int pool_size: The number of worker processes to use; by default 2 processes per core will
+                          be used.
+    :param bool debug: `True` to turn on pickling error debug mode (slower); True by default.
+    """
+    super(LocalMultithreadingEngine, self).__init__(scheduler, storage, cache)
+    self._pool_size = pool_size if pool_size and pool_size > 0 else 2 * multiprocessing.cpu_count()
+
+    execute_step = functools.partial(_execute_step, self._maybe_cache_put, debug)
+    node_builder = scheduler.node_builder()
+    process_initializer = functools.partial(_thread_initializer, node_builder, self._storage)
+    self._pool = StatefulThreadPool(self._pool_size, process_initializer, execute_step)
+    self._debug = debug
+
+  def _submit(self, step):
+    _try_pickle(step)
+    self._pool.submit(step)
+
+  def start(self):
+    self._pool.start()
+
+  def reduce(self, execution_request):
+    # Step instances which have not been submitted yet.
+    # TODO: Scheduler now only sends work once, so a deque should be fine here.
+    pending_submission = OrderedSet()
+    # Dict from step id to a Promise for Steps that have been submitted.
+    in_flight = dict()
+
+    def submit_until(n):
+      """Submit pending while there's capacity, and more than `n` items pending_submission."""
+      to_submit = min(len(pending_submission) - n, self._pool_size - len(in_flight))
+      submitted = 0
+      for _ in range(to_submit):
+        step, promise = pending_submission.pop(last=False)
+
+        if step.step_id in in_flight:
+          raise Exception('{} is already in_flight!'.format(step))
+
+        step = self._storage.key_for_request(step)
+        result = self._maybe_cache_get(step)
+        if result is not None:
+          # Skip in_flight on cache hit.
+          promise.success(result)
+        else:
+          in_flight[step.step_id] = promise
+          self._submit(step)
+          submitted += 1
+      return submitted
+
+    def await_one():
+      """Await one completed step, and remove it from in_flight."""
+      if not in_flight:
+        raise Exception('Awaited an empty pool!')
+      step_id, result = self._pool.await_one_result()
+      if isinstance(result, Exception):
+        raise result
+      result = self._storage.resolve_result(result)
+      if step_id not in in_flight:
+        raise Exception('Received unexpected work from the Executor: {} vs {}'.format(step_id, in_flight.keys()))
+      in_flight.pop(step_id).success(result)
+
+    # The main reduction loop:
+    # 1. Whenever we don't have enough work to saturate the pool, request more.
+    # 2. Whenever the pool is not saturated, submit currently pending work.
+    for step_batch in self._scheduler.schedule(execution_request):
+      if not step_batch:
+        # A batch should only be empty if all dependency work is currently blocked/running.
+        if not in_flight and not pending_submission:
+          raise Exception('Scheduler provided an empty batch while no work is in progress!')
+      else:
+        # Submit and wait for work for as long as we're able to keep the pool saturated.
+        pending_submission.update(step_batch)
+        while submit_until(self._pool_size) > 0:
+          await_one()
+      # Await at least one entry per scheduling loop.
+      submit_until(0)
+      if in_flight:
+        await_one()
+
+    # Consume all steps.
+    while pending_submission or in_flight:
+      submit_until(self._pool_size)
+      await_one()
+
+  def close(self):
+    super(LocalMultithreadingEngine, self).close()
     self._pool.close()
