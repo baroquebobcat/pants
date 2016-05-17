@@ -52,6 +52,7 @@ class Job(object):
 
 
 UNSTARTED = 'Unstarted'
+ON_DECK= 'On Deck'
 QUEUED = 'Queued'
 SUCCESSFUL = 'Successful'
 FAILED = 'Failed'
@@ -64,8 +65,14 @@ class StatusTable(object):
   def __init__(self, keys, pending_dependencies_count):
     self._statuses = {key: UNSTARTED for key in keys}
     self._pending_dependencies_count = pending_dependencies_count
+    self._done_count = 0
+    self._failed_count = 0
 
   def mark_as(self, state, key):
+    if state in self.DONE_STATES:
+      self._done_count += 1
+    if state == FAILED:
+      self._failed_count += 1
     self._statuses[key] = state
 
   def mark_queued(self, key):
@@ -88,10 +95,10 @@ class StatusTable(object):
     return self.is_unstarted(key) and self._pending_dependencies_count[key] == 0
 
   def are_all_done(self):
-    return all(s in self.DONE_STATES for s in self._statuses.values())
+    return self._done_count == len(self._statuses)
 
   def has_failures(self):
-    return any(stat is FAILED for stat in self._statuses.values())
+    return self._failed_count > 0
 
 
 class ExecutionFailure(Exception):
@@ -179,7 +186,8 @@ class ExecutionGraph(object):
 
   def format_dependee_graph(self):
     return "\n".join([
-      "{} -> {{\n  {}\n}}".format(key, ',\n  '.join(self._dependees[key]))
+      '"{}" -> {{\n  {}\n}}'.format(key,
+                                    ',\n  '.join('"{}"'.format(d) for d in self._dependees[key]))
       for key in self._job_keys_as_scheduled
     ])
 
@@ -308,6 +316,7 @@ class ExecutionGraph(object):
             status_table.mark_one_successful_dependency(dependee)
             if status_table.is_ready_to_submit(dependee):
               ready_dependees.append(dependee)
+              status_table.mark_as(ON_DECK, dependee)
 
           submit_jobs(ready_dependees)
         else:  # Failed or canceled.
