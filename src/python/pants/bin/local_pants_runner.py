@@ -5,6 +5,7 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import yappi
 from colors import green
 
 from pants.base.build_environment import get_buildroot
@@ -36,13 +37,18 @@ class LocalPantsRunner(object):
   def _maybe_profiled(self, runner):
     """Run with profiling, if requested."""
     if self._profile_path:
-      import cProfile
-      profiler = cProfile.Profile()
       try:
-        profiler.runcall(runner)
+        yappi.set_clock_type('wall')
+        yappi.start()
+
+        runner()
       finally:
-        profiler.dump_stats(self._profile_path)
-        print('\nDumped profile data to {}'.format(self._profile_path))
+
+        yappi.stop()
+        stats = yappi.get_func_stats()
+        stats.save(self._profile_path, type='pstat')
+
+        print('\nDumped profile data to {}.pstats'.format(self._profile_path))
         view_cmd = green('gprof2dot -f pstats {path} | dot -Tpng -o {path}.png && open {path}.png'
                          .format(path=self._profile_path))
         print('Use, e.g., {} to render and view.'.format(view_cmd))
