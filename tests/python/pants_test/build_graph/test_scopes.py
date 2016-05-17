@@ -127,12 +127,13 @@ class ScopedClosureTest(BaseTest):
     self.assert_closure({a, b, b_alt, c}, {c}, include_scopes=Scopes.RUNTIME | Scopes.DEFAULT)
     self.assert_closure({a, b_alt, c}, {c}, exclude_scopes=Scopes.RUNTIME)
 
-  def test_include_root_level_unconditionally(self):
+  def test_dont_include_root_level_unconditionally_ish(self):
     a = self.make_target('a', scope=Scopes.COMPILE)
     a_root = self.make_target('a_root', scope=Scopes.COMPILE, dependencies=[a])
     b = self.make_target('b')
     b_root = self.make_target('b_root', scope=Scopes.RUNTIME, dependencies=[b])
 
     self.assert_closure({a_root, b_root}, {a_root, b_root}, include_scopes=Scopes.TEST)
-    self.assert_closure({a_root, b_root, b}, {a_root, b_root}, include_scopes=Scopes.DEFAULT)
+    # NB, the b_root is re-added after it doesn't match.
+    self.assert_closure({a_root, b_root}, {a_root, b_root}, include_scopes=Scopes.DEFAULT)
     self.assert_closure({a_root, b_root, a}, {a_root, b_root}, include_scopes=Scopes.COMPILE)

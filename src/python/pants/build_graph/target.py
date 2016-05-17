@@ -256,16 +256,31 @@ class Target(AbstractTarget):
     return ids[0] if len(ids) == 1 else cls.combine_ids(ids)
 
   @classmethod
-  def _closure_predicate(cls, include_scopes=None, exclude_scopes=None, respect_intransitive=False):
-    if not respect_intransitive and include_scopes is None and exclude_scopes is None:
+  def _leveled_closure_predicate(cls, respect_intransitive=False):
+    def transitive_predicate(target, level):
+      return level <= 0 or target.transitive
+
+    if respect_intransitive:
+      return transitive_predicate
+    else:
+      # TODO This case causes problems if it is missing, but only fails one test. the cycle test!!!
+      # ALso, this shouldn't cause a cycle per se. :/
       return None
-    def predicate(target, level):
-      if not target.scope.in_scope(include_scopes=include_scopes, exclude_scopes=exclude_scopes):
-        return False
-      if respect_intransitive and not target.transitive and level > 0:
-        return False
-      return True
-    return predicate
+
+  @classmethod
+  def _scope_predicate(cls, include_scopes=None, exclude_scopes=None):
+    cached_in_scope = dict()
+    def scope_predicate(target):
+      value = cached_in_scope.get(target)
+      if not value:
+        value = target.scope.in_scope(include_scopes=include_scopes, exclude_scopes=exclude_scopes)
+        cached_in_scope[target] = value
+      return value
+
+    if include_scopes is None and exclude_scopes is None:
+      return None
+    else:
+      return scope_predicate
 
   @classmethod
   def closure_for_targets(cls, target_roots, exclude_scopes=None, include_scopes=None,
@@ -291,9 +306,8 @@ class Target(AbstractTarget):
 
     build_graph = target_roots[0]._build_graph
     addresses = [target.address for target in target_roots]
-    leveled_predicate = cls._closure_predicate(include_scopes=include_scopes,
-                                               exclude_scopes=exclude_scopes,
-                                               respect_intransitive=respect_intransitive)
+    leveled_predicate = cls._leveled_closure_predicate(respect_intransitive)
+    scope_predicate = cls._scope_predicate(include_scopes, exclude_scopes)
     closure = OrderedSet()
 
     if not bfs:
@@ -302,11 +316,13 @@ class Target(AbstractTarget):
         work=closure.add,
         postorder=postorder,
         leveled_predicate=leveled_predicate,
+        predicate=scope_predicate
       )
     else:
       closure.update(build_graph.transitive_subgraph_of_addresses_bfs(
         addresses=addresses,
         leveled_predicate=leveled_predicate,
+        predicate=scope_predicate
       ))
 
     # Make sure all the roots made it into the closure.
