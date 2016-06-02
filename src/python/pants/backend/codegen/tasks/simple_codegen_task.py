@@ -17,6 +17,7 @@ from pants.base.exceptions import TaskError
 from pants.base.workunit import WorkUnitLabel
 from pants.build_graph.address import Address
 from pants.build_graph.address_lookup_error import AddressLookupError
+from pants.source.wrapped_globs import EagerFilesetWithSpec
 from pants.task.task import Task
 from pants.util.dirutil import fast_relpath, safe_delete, safe_walk
 
@@ -213,7 +214,7 @@ class SimpleCodegenTask(Task):
       address=self._get_synthetic_address(target, target_workdir),
       target_type=self.synthetic_target_type(target),
       dependencies=self.synthetic_target_extra_dependencies(target, target_workdir),
-      sources=list(self.find_sources(target, target_workdir)),
+      sources=self._synthetic_target_sources(target, target_workdir),
       derived_from=target,
       **copied_attributes
     )
@@ -243,6 +244,21 @@ class SimpleCodegenTask(Task):
       self.context.target_roots.append(synthetic_target)
 
     return synthetic_target
+
+  def _synthetic_target_sources(self, target, target_workdir):
+    # NB(nh): Uses an EagerFilesetWithSpec here to fix the fingerprint of the generated code to one
+    # based on the sources they are derived from.
+    #
+    # If there aren't sources associated with the code gen target, then just return the
+    # found sources.
+    source_file_paths = list(self.find_sources(target, target_workdir))
+    if target.has_sources():
+      return EagerFilesetWithSpec(self._get_synthetic_address(target, target_workdir).spec_path,
+                                  source_file_paths,
+                                  {s: target.payload.sources.fingerprint()
+                                   for s in source_file_paths})
+    else:
+      return source_file_paths
 
   def resolve_deps(self, unresolved_deps):
     """

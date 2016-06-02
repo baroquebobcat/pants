@@ -261,3 +261,8 @@ class SimpleCodegenTaskTest(TaskTestBase):
     task = self._create_dummy_task(target_roots=targets, strategy='isolated')
     task.execute()
     self.assertEqual('copythis', task.codegen_targets()[0].copied)
+
+  def test_generated_codesomething(self):
+    # have a target that has something that is cached that's used by the task,
+
+    pass
