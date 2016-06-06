@@ -5,6 +5,8 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import subprocess
+
 from pants.engine.nodes import Node, Noop, Return, State, TaskNode, Throw, Waiting
 from pants.engine.selectors import Select
 from pants.util.objects import datatype
@@ -79,11 +81,11 @@ class UncacheableTaskNode(TaskNode):
 #  TarArchiver().create(filter=filter)
 #
 #
-class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest',['args', 'temp_dir'])):
+class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest',['args'])):
   pass
 
 
-class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['temp_dir', 'stdout', 'stderr'])):
+class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['stdout', 'stderr'])):
   pass
 
 
@@ -103,8 +105,16 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request']
   is_inlineable = False
 
   def step(self, step_context):
+
+    popen = subprocess.Popen(tuple([self.binary.bin_path]) + self.process_request.args,
+                             stderr=subprocess.PIPE,
+                             stdout=subprocess.PIPE,
+                             # TODO, clean this up so that it's a bit better abstracted
+                             cwd=step_context.project_tree.build_root)
+    popen.wait()
+
     return Return(
-      SnapshottedProcessResult('blah', 'stdout', 'stderr')
+      SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read())
     )
 
 
