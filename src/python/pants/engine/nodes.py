@@ -350,27 +350,38 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
 
   def step(self, step_context):
     # Compute dependencies for the Node, or determine whether it is a Noop.
+    print('task step: {!r}'.format(self))
     dependencies = []
     dep_values = []
     for selector in self.clause:
       dep_node = step_context.select_node(selector, self.subject, self.variants)
       dep_state = step_context.get(dep_node)
+      # NB If the select node is waiting, don't wait for it. Instead, wait for its dependencies
+      # directly. nh: I find this a little confusing
       if type(dep_state) is Waiting:
         dependencies.extend(dep_state.dependencies)
       elif type(dep_state) is Return:
         dep_values.append(dep_state.value)
       elif type(dep_state) is Noop:
+        print('  dep was noop: {}'.format(dep_node))
         if selector.optional:
           dep_values.append(None)
         else:
+          print('  propagating noop.')
           return Noop('Was missing (at least) input {}.', dep_node)
       elif type(dep_state) is Throw:
+        # NB: propagate thrown exception directly.
         return dep_state
       else:
         State.raise_unrecognized(dep_state)
     # If any clause was still waiting on dependencies, indicate it; else execute.
+    print('  found {} deps'.format(len(dependencies)))
+    print('  found {} dep_values'.format(len(dep_values)))
     if dependencies:
+      print('  waiting')
       return Waiting(dependencies)
+
+    print('  running step.')
     try:
       return Return(self.func(*dep_values))
     except Exception as e:
@@ -405,7 +416,7 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
     return (product, subject_type) in cls._FS_PAIRS
 
   @classmethod
-  def generate_subjects(self, filenames):
+  def generate_subjects(cls, filenames):
     """Given filenames, generate a set of subjects for invalidation predicate matching."""
     for f in filenames:
       # Stats, ReadLink, or FileContent for the literal path.
@@ -429,6 +440,7 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
         # This would be caused by a mismatch between _FS_PRODUCT_TYPES and the above switch.
         raise ValueError('Mismatched input value {} for {}'.format(self.subject, self))
     except Exception as e:
+      # TODO test that the errors from this are actionable and not confusing.
       return Throw(e)
 
 
@@ -473,6 +485,7 @@ class StepContext(object):
     This method is decoupled from Selector classes in order to allow the `selector` package to not
     need a dependency on the `nodes` package.
     """
+    print('  select_node:\n    selector: {!r}\n    subject: {!r}\n    variants: {!r}'.format(selector, subject, variants))
     selector_type = type(selector)
     if selector_type is Select:
       return SelectNode(subject, selector.product, variants, None)

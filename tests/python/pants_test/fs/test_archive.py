@@ -51,6 +51,23 @@ class ArchiveTest(unittest.TestCase):
     test_round_trip()
     test_round_trip(prefix='jake')
 
+  def test_tar_add_filter(self):
+
+    with temporary_dir() as fromdir, \
+        temporary_dir() as archive_dir, \
+        temporary_dir() as todir:
+      touch(os.path.join(fromdir, 'allowed.txt'))
+      touch(os.path.join(fromdir, 'disallowed.txt'))
+      def in_fname(fname):
+        print(fname)
+        return fname.index('allowed.txt') >= 0
+      #in_fname = lambda fname: 'allowed.txt' in fname
+      archive = archiver('tar').create(fromdir, archive_dir, 'tarfile',
+                                       filter=in_fname
+                                       )
+      archiver('tar').extract(archive, todir)
+      self.assertEquals({'allowed.txt'}, self._listtree(todir, empty_dirs=False))
+
   def test_tar(self):
     self.round_trip(archiver('tar'), expected_ext='tar', empty_dirs=True)
     self.round_trip(archiver('tgz'), expected_ext='tar.gz', empty_dirs=True)

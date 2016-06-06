@@ -8,6 +8,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import logging
 import threading
 import time
+from abc import abstractmethod, abstractproperty
 from collections import defaultdict, deque
 from contextlib import contextmanager
 
@@ -15,9 +16,11 @@ from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddres
 from pants.build_graph.address import Address
 from pants.engine.addressable import Addresses
 from pants.engine.fs import PathGlobs
+from pants.engine.isolated_process import ProcessOrchestrationNode
 from pants.engine.nodes import (DependenciesNode, FilesystemNode, Node, Noop, Return, SelectNode,
                                 State, StepContext, TaskNode, Throw, Waiting)
 from pants.engine.objects import Closable
+from pants.util.meta import AbstractClass
 from pants.util.objects import datatype
 
 
@@ -398,6 +401,44 @@ class Promise(object):
       return self._success
 
 
+class Rule(AbstractClass):
+  @abstractmethod
+  def as_node(self, subject, product, variants):
+    pass
+
+  @abstractproperty
+  def output_product_type(self):
+    pass
+
+  @abstractproperty
+  def input_selects(self):
+    pass
+
+
+class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'task']), Rule):
+  def as_node(self, subject, product, variants):
+    assert product == self.output_product_type
+    return TaskNode(subject, product, variants, self.task, self.input_selects)
+
+
+class SnapshottedProcess(datatype('SnapshottedProcess',['product_type',
+                                                        'binary_type',
+                                                        'input_selectors',
+                                                        'input_conversion',
+                                                        'output_conversion']), Rule):
+
+  def as_node(self, subject, product, variants):
+    return ProcessOrchestrationNode(subject, self)
+
+  @property
+  def output_product_type(self):
+    return self.product_type
+
+  @property
+  def input_selects(self):
+    return self.input_selectors
+
+
 class NodeBuilder(Closable):
   """Holds an index of tasks used to instantiate TaskNodes."""
 
@@ -405,21 +446,31 @@ class NodeBuilder(Closable):
   def create(cls, tasks):
     """Indexes tasks by their output type."""
     serializable_tasks = defaultdict(set)
-    for output_type, input_selects, task in tasks:
-      serializable_tasks[output_type].add((task, tuple(input_selects)))
+    for entry in tasks:
+      if isinstance(entry, (tuple, list)) and len(entry) == 3:
+        output_type, input_selects, task = entry
+        serializable_tasks[output_type].add(
+          TaskRule(output_type, tuple(input_selects), task)
+        )
+      elif isinstance(entry, Rule):
+        serializable_tasks[entry.product_type].add(entry)
+
     return cls(serializable_tasks)
 
   def __init__(self, tasks):
     self._tasks = tasks
 
   def gen_nodes(self, subject, product, variants):
+    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product, variants))
     if FilesystemNode.is_filesystem_pair(type(subject), product):
       # Native filesystem operations.
       yield FilesystemNode(subject, product, variants)
     else:
-      # Tasks.
-      for task, anded_clause in self._tasks[product]:
-        yield TaskNode(subject, product, variants, task, anded_clause)
+      # Rules that provide the requested product.
+      matching_rules = self._tasks[product]
+      print('  matching rule ct: {}'.format(len(matching_rules)))
+      for rule in matching_rules:
+        yield rule.as_node(subject, product, variants)
 
 
 class StepRequest(datatype('Step', ['step_id', 'node', 'dependencies', 'inline_nodes', 'project_tree'])):
@@ -582,7 +633,9 @@ class LocalScheduler(object):
           elif type(subject) is PathGlobs:
             yield DependenciesNode(subject, product, None, subject.ftype, None)
           else:
-            raise ValueError('Unsupported root subject type: {}'.format(subject))
+            yield SelectNode(subject, product, None, None)
+          #else:
+          #  raise ValueError('Unsupported root subject type: {}'.format(subject))
 
     return ExecutionRequest(tuple(roots()))
 
