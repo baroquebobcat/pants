@@ -6,15 +6,32 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import subprocess
+from abc import abstractproperty
 
 from pants.engine.nodes import Node, Noop, Return, State, TaskNode, Throw, Waiting
 from pants.engine.selectors import Select
 from pants.util.objects import datatype
+from pants.util.process_handler import SubprocessProcessHandler
 
 
 class Snapshot(datatype('Snapshot', ['archive'])):
   pass
 
+
+class CreateSnapshotNode(datatype('CreateSnapshotNode', ['subject', 'product', 'snapshot_dir']), Node):
+  is_cacheable=False
+  is_inlineable=False
+  def step(self, step_context):
+
+    pass
+
+
+class Binary(datatype('Binary', [])):
+  """Represents a binary in the product graph. Still working out the contract here."""
+
+  @abstractproperty
+  def bin_path(self):
+    pass
 
 #
 # Data oriented vs
@@ -81,8 +98,11 @@ class UncacheableTaskNode(TaskNode):
 #  TarArchiver().create(filter=filter)
 #
 #
-class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest',['args'])):
-  pass
+class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest', ['args'])):
+  def __new__(cls, args, **kwargs):
+    if not isinstance(args, tuple):
+      args = tuple(args)
+    return super(SnapshottedProcessRequest, cls).__new__(cls, args, **kwargs)
 
 
 class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['stdout', 'stderr'])):
@@ -101,6 +121,10 @@ class SnapshotNode(datatype('SnapshotNode', ['binary', 'process_request']), Node
 
 
 class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request']), Node):
+  # TODO how will this work with
+  # TODO - nailgun?
+  # TODO - snapshots?
+
   is_cacheable = False
   is_inlineable = False
 
@@ -111,7 +135,10 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request']
                              stdout=subprocess.PIPE,
                              # TODO, clean this up so that it's a bit better abstracted
                              cwd=step_context.project_tree.build_root)
-    popen.wait()
+
+    # Not sure why I'm doing this at this point
+    handler_popen = SubprocessProcessHandler(popen)
+    handler_popen.wait()
 
     return Return(
       SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read())

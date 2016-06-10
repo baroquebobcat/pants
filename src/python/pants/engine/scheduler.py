@@ -8,7 +8,6 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import logging
 import threading
 import time
-from abc import abstractmethod, abstractproperty
 from collections import defaultdict, deque
 from contextlib import contextmanager
 
@@ -20,7 +19,7 @@ from pants.engine.isolated_process import ProcessOrchestrationNode
 from pants.engine.nodes import (DependenciesNode, FilesystemNode, Node, Noop, Return, SelectNode,
                                 State, StepContext, TaskNode, Throw, Waiting)
 from pants.engine.objects import Closable
-from pants.util.meta import AbstractClass
+from pants.engine.rule import Rule
 from pants.util.objects import datatype
 
 
@@ -405,20 +404,6 @@ class Promise(object):
       return self._success
 
 
-class Rule(AbstractClass):
-  @abstractmethod
-  def as_node(self, subject, product, variants):
-    pass
-
-  @abstractproperty
-  def output_product_type(self):
-    pass
-
-  @abstractproperty
-  def input_selects(self):
-    pass
-
-
 class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'task']), Rule):
   def as_node(self, subject, product, variants):
     assert product == self.output_product_type
@@ -449,32 +434,44 @@ class NodeBuilder(Closable):
   @classmethod
   def create(cls, tasks):
     """Indexes tasks by their output type."""
-    serializable_tasks = defaultdict(set)
+    serializable_rules = defaultdict(set)
     for entry in tasks:
       if isinstance(entry, (tuple, list)) and len(entry) == 3:
         output_type, input_selects, task = entry
-        serializable_tasks[output_type].add(
+        serializable_rules[output_type].add(
           TaskRule(output_type, tuple(input_selects), task)
         )
       elif isinstance(entry, Rule):
-        serializable_tasks[entry.product_type].add(entry)
+        serializable_rules[entry.product_type].add(entry)
+      else:
+        # TODO test to exercise
+        raise Exception("Unexpected rule type for entry {}".format(entry))
 
-    return cls(serializable_tasks)
+    intrinsic_rules = FilesystemNode.as_intrinsic_rules()
+    return cls(serializable_rules, intrinsic_rules)
 
-  def __init__(self, tasks):
-    self._tasks = tasks
+  def __init__(self, rules, intrinsics):
+    self._rules = rules
+    self._intrinsics = intrinsics
 
-  def gen_nodes(self, subject, product, variants):
-    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product, variants))
-    if FilesystemNode.is_filesystem_pair(type(subject), product):
-      # Native filesystem operations.
-      yield FilesystemNode(subject, product, variants)
-    else:
-      # Rules that provide the requested product.
-      matching_rules = self._tasks[product]
-      print('  matching rule ct: {}'.format(len(matching_rules)))
-      for rule in matching_rules:
-        yield rule.as_node(subject, product, variants)
+  def gen_nodes(self, subject, product_type, variants):
+    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
+    # Intrinsic rules that provide the requested product for the current subject type.
+    matching_intrinsics = self._intrinsics.get((type(subject), product_type), tuple())
+    if matching_intrinsics:
+      print("  matching intrinics ct: {}".format(matching_intrinsics))
+      if len(matching_intrinsics) > 1:
+        raise Exception('Can only have one matching intrinsic, {}'.format(matching_intrinsics))
+      for rule in matching_intrinsics:
+        yield rule.as_node(subject, product_type, variants)
+      return
+
+
+    # Rules that provide the requested product.
+    matching_rules = self._rules[product_type]
+    print('  matching rule ct: {}'.format(len(matching_rules)))
+    for rule in matching_rules:
+      yield rule.as_node(subject, product_type, variants)
 
 
 class StepRequest(datatype('Step', ['step_id', 'node', 'dependencies', 'inline_nodes', 'project_tree'])):
@@ -537,9 +534,9 @@ class LocalScheduler(object):
                             attempt. Very expensive, very experimental.
     """
     self._products_by_goal = goals
-    self._tasks = tasks
     self._project_tree = project_tree
-    self._node_builder = NodeBuilder.create(self._tasks)
+
+    self._node_builder = NodeBuilder.create(tasks)
 
     self._graph_validator = graph_validator
     self._product_graph = ProductGraph()

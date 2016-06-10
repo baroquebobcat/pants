@@ -15,6 +15,7 @@ from pants.engine.addressable import parse_variants
 from pants.engine.fs import (Dir, DirectoryListing, File, FileContent, FileDigest, Link, Path,
                              ReadLink, Stats, file_content, file_digest, list_directory, path_stat,
                              read_link)
+from pants.engine.rule import Rule
 from pants.engine.selectors import (Select, SelectDependencies, SelectLiteral, SelectProjection,
                                     SelectVariant)
 from pants.engine.struct import HasProducts, Variants
@@ -396,8 +397,14 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
     return repr(self)
 
 
+class FSRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
+  def as_node(self, subject, product, variants):
+    # assert that product / subject types match
+    return FilesystemNode(subject, product, variants)
+
 class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants']), Node):
-  """A native node type for filesystem operations."""
+  """A node type for implementing filesystem operations."""
+  # TODO, are variants needed /  used here?
 
   _FS_PAIRS = {
       (DirectoryListing, Dir),
@@ -407,15 +414,14 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
       (ReadLink, Link),
     }
 
-  _FS_PRODUCT_TYPES = {product for product, subject in _FS_PAIRS}
-
   is_cacheable = False
   is_inlineable = False
 
   @classmethod
-  def is_filesystem_pair(cls, subject_type, product):
-    """True if the given subject type and product type should be computed using a FileystemNode."""
-    return (product, subject_type) in cls._FS_PAIRS
+  def as_intrinsic_rules(cls):
+    """Returns a dict of tuple(sbj type, product type) -> list of rules for that subject product type tuple."""
+    return {(subject_type, product_type): [FSRule(product_type, subject_type)]
+            for product_type, subject_type in cls._FS_PAIRS}
 
   @classmethod
   def generate_subjects(cls, filenames):
@@ -504,3 +510,14 @@ class StepContext(object):
       return SelectNode(selector.subject, selector.product, variants, None)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
+
+  def __repr__(self):
+    return 'StepContext(node_builder={}, ' \
+           'project_tree={}, ' \
+           'len(node_states)={}, ' \
+           'len(parents)={}, ' \
+           'inline_nodes={})'.format(self._node_builder,
+                                     self.project_tree,
+                                     len(self._node_states),
+                                     len(self._parents),
+                                     self._inline_nodes)
