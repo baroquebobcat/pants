@@ -8,7 +8,9 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import subprocess
 from abc import abstractproperty
 
+from pants.engine.fs import Dir, PathGlob
 from pants.engine.nodes import Node, Noop, Return, State, TaskNode, Throw, Waiting
+from pants.engine.rule import Rule
 from pants.engine.selectors import Select
 from pants.util.objects import datatype
 from pants.util.process_handler import SubprocessProcessHandler
@@ -18,12 +20,38 @@ class Snapshot(datatype('Snapshot', ['archive'])):
   pass
 
 
-class CreateSnapshotNode(datatype('CreateSnapshotNode', ['subject', 'product', 'snapshot_dir']), Node):
+class SnapshotRule(Rule):
+  def as_node(self, subject, product_type, variants):
+    return CreateSnapshotNode(subject, product_type)
+
+
+class CreateSnapshotNode(datatype('CreateSnapshotNode', ['subject', 'product']), Node):
+  """Represents the op for creating a snapshot from some kind of file or path like collection
+
+  """
   is_cacheable=False
   is_inlineable=False
-  def step(self, step_context):
 
+  @classmethod
+  def as_intrinsic_rules(cls):
+    # subject type, product type
+    #Files
+    #Dirs - not sure if it should use dirs, since what would it collect?
+    #PathGlob - obvi
+    return {
+    PathGlob
+      (Dir, Snapshot): SnapshotRule()
+
+    }
+
+  def step(self, step_context):
+    # get the root dir somehow. For now just get it off of the project_tree
+    step_context.project_tree
+    # maybe we could construct a tmp "project_tree" for a checked out snapshot? :)
     pass
+
+class CheckoutSnapshotNode(datatype('Checkout', [])):
+  pass
 
 
 class Binary(datatype('Binary', [])):

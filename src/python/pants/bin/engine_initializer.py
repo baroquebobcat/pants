@@ -14,9 +14,9 @@ from pants.base.cmd_line_spec_parser import CmdLineSpecParser
 from pants.base.file_system_project_tree import FileSystemProjectTree
 from pants.bin.options_initializer import OptionsInitializer
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.fs import create_fs_tasks
-from pants.engine.graph import create_graph_tasks
-from pants.engine.legacy.graph import LegacyBuildGraph, create_legacy_graph_tasks
+from pants.engine.fs import create_fs_rules
+from pants.engine.graph import create_graph_rules
+from pants.engine.legacy.graph import LegacyBuildGraph, create_legacy_graph_rules
 from pants.engine.legacy.parser import LegacyPythonCallbacksParser
 from pants.engine.legacy.structs import JvmAppAdaptor, PythonTargetAdaptor, TargetAdaptor
 from pants.engine.mapper import AddressMapper
@@ -103,15 +103,15 @@ class EngineInitializer(object):
     address_mapper = AddressMapper(symbol_table_cls=symbol_table_cls,
                                    parser_cls=LegacyPythonCallbacksParser)
 
-    # Create a Scheduler containing graph and filesystem tasks, with no installed goals. The
+    # Create a Scheduler containing graph and filesystem rules, with no installed goals. The
     # LegacyBuildGraph will explicitly request the products it needs.
-    tasks = (
-      create_legacy_graph_tasks() +
-      create_fs_tasks() +
-      create_graph_tasks(address_mapper, symbol_table_cls)
+    rules = (
+      create_legacy_graph_rules() +
+      create_fs_rules() +
+      create_graph_rules(address_mapper, symbol_table_cls)
     )
 
-    scheduler = LocalScheduler(dict(), tasks, project_tree)
+    scheduler = LocalScheduler(dict(), rules, project_tree)
     engine = LocalSerialEngine(scheduler, Storage.create(debug=False))
 
     return LegacyGraphHelper(scheduler, engine, symbol_table_cls, LegacyBuildGraph)

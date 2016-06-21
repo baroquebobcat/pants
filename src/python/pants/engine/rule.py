@@ -14,10 +14,10 @@ class Rule(AbstractClass):
   """This abstract class represents rules and their common properties.
 
    The idea is that the scheduler can lean on this abstraction to figure out how to create nodes
-   from the tasks or instrinics it supports"""
+   from the tasks or intrinsics it supports"""
 
   @abstractmethod
-  def as_node(self, subject, product, variants):
+  def as_node(self, subject, product_type, variants):
     pass
 
   @abstractproperty

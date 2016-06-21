@@ -12,7 +12,6 @@ from logging import basicConfig
 from pants.base.file_system_project_tree import FileSystemProjectTree
 from pants.binaries import binary_util
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.fs import identity
 from pants.engine.scheduler import LocalScheduler
 from pants.engine.selectors import Select, SelectDependencies, SelectProjection
 from pants.engine.storage import Storage
@@ -22,6 +21,10 @@ from pants_test.engine.examples.graph_validator import GraphValidator
 
 
 basicConfig(level='DEBUG')
+
+
+def identity(x):
+  return x
 
 
 def printing_func(func):

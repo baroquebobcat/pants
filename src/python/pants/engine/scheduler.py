@@ -420,9 +420,9 @@ class Promise(object):
 
 
 class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'task']), Rule):
-  def as_node(self, subject, product, variants):
-    assert product == self.output_product_type
-    return TaskNode(subject, product, variants, self.task, self.input_selects)
+  def as_node(self, subject, product_type, variants):
+    assert product_type == self.output_product_type
+    return TaskNode(subject, product_type, variants, self.task, self.input_selects)
 
 
 class SnapshottedProcess(datatype('SnapshottedProcess',['product_type',
@@ -431,7 +431,7 @@ class SnapshottedProcess(datatype('SnapshottedProcess',['product_type',
                                                         'input_conversion',
                                                         'output_conversion']), Rule):
 
-  def as_node(self, subject, product, variants):
+  def as_node(self, subject, product_type, variants):
     return ProcessOrchestrationNode(subject, self)
 
   @property
@@ -444,13 +444,13 @@ class SnapshottedProcess(datatype('SnapshottedProcess',['product_type',
 
 
 class NodeBuilder(Closable):
-  """Holds an index of tasks used to instantiate TaskNodes."""
+  """Holds an index of rules used to instantiate Nodes."""
 
   @classmethod
-  def create(cls, tasks):
-    """Indexes tasks by their output type."""
+  def create(cls, rule_entries):
+    """Creates a NodeBuilder with rules indexed by their output type."""
     serializable_rules = defaultdict(set)
-    for entry in tasks:
+    for entry in rule_entries:
       if isinstance(entry, (tuple, list)) and len(entry) == 3:
         output_type, input_selects, task = entry
         serializable_rules[output_type].add(
@@ -529,7 +529,7 @@ class LocalScheduler(object):
 
   def __init__(self,
                goals,
-               tasks,
+               rules,
                project_tree,
                graph_lock=None,
                inline_nodes=True,
@@ -537,7 +537,7 @@ class LocalScheduler(object):
     """
     :param goals: A dict from a goal name to a product type. A goal is just an alias for a
            particular (possibly synthetic) product.
-    :param tasks: A set of (output, input selection clause, task function) triples which
+    :param rules: A set of (output, input selection clause, task function) triples which
            is used to compute values in the product graph.
     :param project_tree: An instance of ProjectTree for the current build root.
     :param graph_lock: A re-entrant lock to use for guarding access to the internal ProductGraph
@@ -551,7 +551,7 @@ class LocalScheduler(object):
     self._products_by_goal = goals
     self._project_tree = project_tree
 
-    self._node_builder = NodeBuilder.create(tasks)
+    self._node_builder = NodeBuilder.create(rules)
 
     self._graph_validator = graph_validator
     self._product_graph = ProductGraph()

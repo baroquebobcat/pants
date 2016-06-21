@@ -402,9 +402,9 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
 
 
 class FSRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
-  def as_node(self, subject, product, variants):
+  def as_node(self, subject, product_type, variants):
     # assert that product / subject types match
-    return FilesystemNode(subject, product, variants)
+    return FilesystemNode(subject, product_type, variants)
 
 class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants']), Node):
   """A node type for implementing filesystem operations."""
