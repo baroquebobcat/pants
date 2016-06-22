@@ -54,7 +54,7 @@ python_tests(
 
 
 python_tests(
-  name='something',
+  name='isolated_process',
   sources=['test_isolated_process.py'],
   dependencies=[
     ':scheduler_test_base',

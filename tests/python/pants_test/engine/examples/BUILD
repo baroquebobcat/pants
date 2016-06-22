@@ -105,6 +105,10 @@ python_library(
 )
 
 
-python_binary(name='calc',
-entry_point='pants_test.engine.examples.calculator:main_addresses',
-dependencies=[':calculator'])
+python_binary(
+  name='calc',
+  entry_point='pants_test.engine.examples.calculator:main_addresses',
+  dependencies=[
+    ':calculator'
+  ]
+)

@@ -420,6 +420,8 @@ class Promise(object):
 
 
 class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'task']), Rule):
+  """A rule for producing nodes from task triples."""
+
   def as_node(self, subject, product_type, variants):
     assert product_type == self.output_product_type
     return TaskNode(subject, product_type, variants, self.task, self.input_selects)
@@ -430,6 +432,7 @@ class SnapshottedProcess(datatype('SnapshottedProcess',['product_type',
                                                         'input_selectors',
                                                         'input_conversion',
                                                         'output_conversion']), Rule):
+  """A rule for snapshotted processes."""
 
   def as_node(self, subject, product_type, variants):
     return ProcessOrchestrationNode(subject, self)
@@ -462,7 +465,7 @@ class NodeBuilder(Closable):
         # TODO test to exercise
         raise Exception("Unexpected rule type for entry {}".format(entry))
 
-    intrinsic_rules = FilesystemNode.as_intrinsic_rules()
+    intrinsic_rules = FilesystemNode.as_intrinsic_rules() # TODO these should be better articulated.
     return cls(serializable_rules, intrinsic_rules)
 
   def __init__(self, rules, intrinsics):
@@ -470,17 +473,14 @@ class NodeBuilder(Closable):
     self._intrinsics = intrinsics
 
   def gen_nodes(self, subject, product_type, variants):
-    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
     # Intrinsic rules that provide the requested product for the current subject type.
     matching_intrinsics = self._intrinsics.get((type(subject), product_type), tuple())
     if matching_intrinsics:
-      print("  matching intrinics ct: {}".format(matching_intrinsics))
       if len(matching_intrinsics) > 1:
         raise Exception('Can only have one matching intrinsic, {}'.format(matching_intrinsics))
       for rule in matching_intrinsics:
         yield rule.as_node(subject, product_type, variants)
       return
-
 
     # Rules that provide the requested product.
     matching_rules = self._rules[product_type]
@@ -639,6 +639,19 @@ class LocalScheduler(object):
     """
 
     # Determine the root Nodes for the products and subjects selected by the goals and specs.
+    # TODO nh: it would be better if this were not tied to particular types.
+    # I'm not quite sure how it ought to work though. Maybe if we had root rules.
+    # Since rules are lhs type, rhs input types + as_node,
+    # Hm.
+    # Maybe something like
+    # for subject in subjects:
+    #   for product_type in products:
+    #     root_rule.get(type(subject), default_root_rule).as_node(subject, product_type, None)
+    #
+    # then root rules could look like
+    # class PathGlobsRoot():
+    #   def as_node...
+    # This way too, you could make tests that start with root types that are different, without hardcoding here.
     def roots():
       for subject in subjects:
         for product in products:

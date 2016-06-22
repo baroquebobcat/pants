@@ -356,7 +356,6 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
 
   def step(self, step_context):
     # Compute dependencies for the Node, or determine whether it is a Noop.
-    print('task step: {!r}'.format(self))
     dependencies = []
     dep_values = []
     for selector in self.clause:
@@ -369,11 +368,9 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
       elif type(dep_state) is Return:
         dep_values.append(dep_state.value)
       elif type(dep_state) is Noop:
-        print('  dep was noop: {}'.format(dep_node))
         if selector.optional:
           dep_values.append(None)
         else:
-          print('  propagating noop.')
           return Noop('Was missing (at least) input {}.', dep_node)
       elif type(dep_state) is Throw:
         # NB: propagate thrown exception directly.
@@ -381,13 +378,8 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
       else:
         State.raise_unrecognized(dep_state)
     # If any clause was still waiting on dependencies, indicate it; else execute.
-    print('  found {} deps'.format(len(dependencies)))
-    print('  found {} dep_values'.format(len(dep_values)))
     if dependencies:
-      print('  waiting')
       return Waiting(dependencies)
-
-    print('  running step.')
     try:
       return Return(self.func(*dep_values))
     except Exception as e:
@@ -403,7 +395,7 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
 
 class FSRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
   def as_node(self, subject, product_type, variants):
-    # assert that product / subject types match
+    # TODO assert that product / subject types match
     return FilesystemNode(subject, product_type, variants)
 
 class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants']), Node):
@@ -495,7 +487,6 @@ class StepContext(object):
     This method is decoupled from Selector classes in order to allow the `selector` package to not
     need a dependency on the `nodes` package.
     """
-    print('  select_node:\n    selector: {!r}\n    subject: {!r}\n    variants: {!r}'.format(selector, subject, variants))
     selector_type = type(selector)
     if selector_type is Select:
       return SelectNode(subject, selector.product, variants, None)
