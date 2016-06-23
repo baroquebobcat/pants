@@ -6,17 +6,21 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import os
+import tarfile
 import unittest
 
 from pants.build_graph.address import Address
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.fs import Dir, Files, PathGlob, PathGlobs
-from pants.engine.isolated_process import (Binary, ProcessExecutionNode, ProcessOrchestrationNode,
-                                           Snapshot, SnapshotNode, SnapshottedProcessRequest,
-                                           SnapshottedProcessResult)
-from pants.engine.nodes import Noop, Return, StepContext, Waiting
+from pants.engine.fs import Dir, Files, PathGlob, PathGlobs, PathRoot
+from pants.engine.isolated_process import (Binary, ProcessExecutionNode,  # SnapshotNode,
+                                           ProcessOrchestrationNode, Snapshot,
+                                           SnapshottedProcessRequest, SnapshottedProcessResult)
+from pants.engine.nodes import Node, Noop, Return, State, StepContext, Throw, Waiting
+from pants.engine.rule import Rule
 from pants.engine.scheduler import SnapshottedProcess
-from pants.engine.selectors import Select
+from pants.engine.selectors import Select, SelectLiteral, SelectProjection
+from pants.util.contextutil import open_tar
+from pants.util.dirutil import safe_mkdir
 from pants.util.objects import datatype
 from pants_test.engine.examples.planners import JavaSources
 from pants_test.engine.scheduler_test_base import SchedulerTestBase
@@ -118,10 +122,67 @@ def java_sources_to_javac_args(java_sources):
 def javac_bin():
   return Javac()
 
-def snapshotting_fn(file_list):
+
+class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
+
+  is_inlineable = False
+  product = Snapshot
+
+  is_cacheable = True # TODO need to test this somehow.
+
+  def variants(self): # TODO do snapshots need variants? What would that mean?
+    pass
+
+  def step(self, step_context):
+    selector = Select(Files)
+    dep_state = step_context.get(step_context.select_node(selector, self.subject, None))
+    dependencies = []
+    dep_values = []
+    if type(dep_state) is Waiting:
+      dependencies.extend(dep_state.dependencies)
+      return Waiting(dependencies)
+    elif type(dep_state) is Return:
+      dep_values.append(dep_state.value)
+    elif type(dep_state) is Noop:
+      if selector.optional:
+        dep_values.append(None)
+      else:
+        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+    elif type(dep_state) is Throw:
+      # NB: propagate thrown exception directly.
+      return dep_state
+    else:
+      State.raise_unrecognized(dep_state)
+
+    snapshot_dir = os.path.join(step_context.project_tree.build_root, 'snapshots')
+    safe_mkdir(snapshot_dir)
+    result = snapshotting_fn(dep_values[0],
+                             snapshot_dir, build_root=step_context.project_tree.build_root)
+    return Return(result)
+
+
+
+class SnapshottingRule(Rule):
+  @property
+  def input_selects(self):
+    return Select(Files)
+
+  @property
+  def output_product_type(self):
+    return Snapshot
+
+  def as_node(self, subject, product_type, variants):
+    assert product_type == Snapshot
+    return SnapshotNode(subject)
+
+def snapshotting_fn(file_list, archive_dir, build_root):
   print('snapshotting for files: {}'.format(file_list))
   # TODO might need some notion of a source root for snapshots.
-  raise Exception("doesn't work yet")
+  tar_location = os.path.join(archive_dir, 'my-tar.tar')
+  with open_tar(tar_location, mode='w:gz',) as tar:
+    for file in file_list.dependencies:
+      tar.add(os.path.join(build_root, file.path), file.path)
+  return Snapshot(tar_location)
 
 class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
   """A classpath entry for a subject. This assumes that its the compiled classpath entry, not like, sources on the classpath or something."""
@@ -150,10 +211,10 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     # I think I shouldn't work on this one while I'm not sure I like this layout
     # Lesse
     node = ProcessOrchestrationNode('MySubject', SnapshottedProcess(FakeClassPath,
-                                                             CoolBinary,
+                                                                    CoolBinary,
                                                                     (Select(Blah),),
-                                                              blah_to_request,
-                                                             request_to_fake_classpath
+                                                                    blah_to_request,
+                                                                    request_to_fake_classpath
                                                              ))
     context = FakeStepContext()
     waiting = node.step(context)
@@ -166,22 +227,10 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
   # TODO test if orchestration node's input creation fns returns None, the orchestration should Noop.
 
-  def test_gather_snapshot_of_dir(self):
+  def test_gather_snapshot_of_pathglobs(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-# Snapshot rule is
-    # subject: Files
-    # product:
-    # Snapshot :- subject(Files),
-    # Snapshot :- Files
-    #
     scheduler = self.mk_scheduler(tasks=[
-      (Snapshot, (Select(Files),), snapshotting_fn)
-                                    # subject to files / product of subject to files for snapshot.
-                                    #SnapshottedProcess(Concatted,
-                                    #                   ShellCat, (Select(Files),),
-                                    #                   file_list_to_args_for_cat, process_result_to_concatted),
-                                    #[ShellCat, [], shell_cat_binary]
-      # Snapshotting is intrinsic
+                                    SnapshottingRule()
                                   ],
                                   # Not sure what to put here yet.
                                   goals=None,
@@ -194,8 +243,11 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     root_entries = scheduler.root_entries(request).items()
     self.assertEquals(1, len(root_entries))
     state = self.assertFirstEntryIsReturn(root_entries, scheduler)
-    concatted = state.value
+    snapshot = state.value
 
+    with open_tar(snapshot.archive, errorlevel=1) as tar:
+      self.assertEqual(['fs_test/a/b/1.txt', 'fs_test/a/b/2'],
+                       [tar_info.path for tar_info in tar.getmembers()])
 
   def test_integration_simple_concat_test(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
