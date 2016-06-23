@@ -10,11 +10,11 @@ import unittest
 
 from pants.build_graph.address import Address
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.fs import Dir, Files
+from pants.engine.fs import Dir, Files, PathGlob, PathGlobs
 from pants.engine.isolated_process import (Binary, ProcessExecutionNode, ProcessOrchestrationNode,
                                            Snapshot, SnapshotNode, SnapshottedProcessRequest,
                                            SnapshottedProcessResult)
-from pants.engine.nodes import Noop, Return, StepContext
+from pants.engine.nodes import Noop, Return, StepContext, Waiting
 from pants.engine.scheduler import SnapshottedProcess
 from pants.engine.selectors import Select
 from pants.util.objects import datatype
@@ -118,6 +118,10 @@ def java_sources_to_javac_args(java_sources):
 def javac_bin():
   return Javac()
 
+def snapshotting_fn(file_list):
+  print('snapshotting for files: {}'.format(file_list))
+  # TODO might need some notion of a source root for snapshots.
+  raise Exception("doesn't work yet")
 
 class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
   """A classpath entry for a subject. This assumes that its the compiled classpath entry, not like, sources on the classpath or something."""
@@ -137,29 +141,41 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
     pass
 
-  def test_blah(self):
-    return
+  def test_orchestration_node_in_a_unit_like_way(self):
+    class FakeStepContext(object):
+
+      def get(self, n):
+        return Waiting([n])
+    # What's the goal here?
+    # I think I shouldn't work on this one while I'm not sure I like this layout
+    # Lesse
     node = ProcessOrchestrationNode('MySubject', SnapshottedProcess(FakeClassPath,
                                                              CoolBinary,
                                                                     (Select(Blah),),
                                                               blah_to_request,
                                                              request_to_fake_classpath
                                                              ))
-    context = StepContext(None, None, tuple(), False)
+    context = FakeStepContext()
     waiting = node.step(context)
 
     self.assertEquals(1, len(waiting.dependencies))
 
 
 
-    self.fail()
+    #self.fail()
 
   # TODO test if orchestration node's input creation fns returns None, the orchestration should Noop.
 
   def test_gather_snapshot_of_dir(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-
+# Snapshot rule is
+    # subject: Files
+    # product:
+    # Snapshot :- subject(Files),
+    # Snapshot :- Files
+    #
     scheduler = self.mk_scheduler(tasks=[
+      (Snapshot, (Select(Files),), snapshotting_fn)
                                     # subject to files / product of subject to files for snapshot.
                                     #SnapshottedProcess(Concatted,
                                     #                   ShellCat, (Select(Files),),
@@ -172,13 +188,12 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
                                   project_tree=project_tree)
 
-    request = scheduler.execution_request([Snapshot], [Dir('fs_test/a/b')])
+    request = scheduler.execution_request([Snapshot], [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
     LocalSerialEngine(scheduler).reduce(request)
 
     root_entries = scheduler.root_entries(request).items()
     self.assertEquals(1, len(root_entries))
-    root, state = root_entries[0]
-    self.assertIsInstance(state, Return)
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
     concatted = state.value
 
 
@@ -187,9 +202,11 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
     scheduler = self.mk_scheduler(tasks=[
                                     # subject to files / product of subject to files for snapshot.
-                                    SnapshottedProcess(Concatted,
-                                                       ShellCat, (Select(Files),),
-                                                       file_list_to_args_for_cat, process_result_to_concatted),
+                                    SnapshottedProcess(product_type=Concatted,
+                                                       binary_type=ShellCat,
+                                                       input_selectors=(Select(Files),),
+                                                       input_conversion=file_list_to_args_for_cat,
+                                                       output_conversion=process_result_to_concatted),
                                     [ShellCat, [], shell_cat_binary]
                                   ],
                                   # Not sure what to put here yet.
@@ -197,24 +214,21 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
                                   project_tree=project_tree)
 
-    request = scheduler.execution_request([Concatted], [Dir('fs_test/a/b')])
+    request = scheduler.execution_request([Concatted],
+                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
     LocalSerialEngine(scheduler).reduce(request)
 
     root_entries = scheduler.root_entries(request).items()
     self.assertEquals(1, len(root_entries))
-    root, state = root_entries[0]
-    try:
-      self.assertIsInstance(state, Return)
-    except AssertionError:
-      if isinstance(state, Noop):
-        for d in scheduler.product_graph.dependencies_of(root):
-          print(d)
-          print(scheduler.product_graph.state(d))
-        #print(tuple(scheduler.product_graph.dependencies_of(root)))
-        raise
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
     concatted = state.value
 
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
+
+  def assertFirstEntryIsReturn(self, root_entries, scheduler):
+    root, state = root_entries[0]
+    self.assertReturn(state, root, scheduler)
+    return state
 
   def test_process_exec_node_directly(self):
     # process exec node needs to be able to do nailgun
@@ -261,8 +275,25 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
     root_entries = scheduler.root_entries(request).items()
     self.assertEquals(1, len(root_entries))
-    root, state = root_entries[0]
-    self.assertIsInstance(state, Return)
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
     classpath_entry = state.value
     self.assertIsInstance(classpath_entry, ClasspathEntry)
     self.assertTrue(os.path.exists(os.path.join(classpath_entry.path, 'simple', 'Simple.class')))
+
+  def assertReturn(self, state, root, scheduler):
+    is_return = isinstance(state, Return)
+    if is_return:
+      return
+    else:
+      self.fail('Expected a Return, but found a {}. trace below:\n{}'
+                .format(state, '\n'.join(scheduler.product_graph.trace(root))))
+      #
+    #try:
+    #  self.assertReturn(state)
+    #except AssertionError:
+    #  if isinstance(state, Noop):
+    #    for d in scheduler.product_graph.dependencies_of(root):
+    #      print(d)
+    #      print(scheduler.product_graph.state(d))
+    #    # print(tuple(scheduler.product_graph.dependencies_of(root)))
+    #    raise
