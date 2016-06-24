@@ -19,7 +19,7 @@ from pants.engine.nodes import Node, Noop, Return, State, StepContext, Throw, Wa
 from pants.engine.rule import Rule
 from pants.engine.scheduler import SnapshottedProcess
 from pants.engine.selectors import Select, SelectLiteral, SelectProjection
-from pants.util.contextutil import open_tar
+from pants.util.contextutil import open_tar, temporary_dir
 from pants.util.dirutil import safe_mkdir
 from pants.util.objects import datatype
 from pants_test.engine.examples.planners import JavaSources
@@ -127,7 +127,6 @@ class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
 
   is_inlineable = False
   product = Snapshot
-
   is_cacheable = True # TODO need to test this somehow.
 
   def variants(self): # TODO do snapshots need variants? What would that mean?
@@ -135,12 +134,11 @@ class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
 
   def step(self, step_context):
     selector = Select(Files)
-    dep_state = step_context.get(step_context.select_node(selector, self.subject, None))
-    dependencies = []
+    node = step_context.select_node(selector, self.subject, None)
+    dep_state = step_context.get(node)
     dep_values = []
     if type(dep_state) is Waiting:
-      dependencies.extend(dep_state.dependencies)
-      return Waiting(dependencies)
+      return Waiting([node])
     elif type(dep_state) is Return:
       dep_values.append(dep_state.value)
     elif type(dep_state) is Noop:
@@ -154,25 +152,24 @@ class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
     else:
       State.raise_unrecognized(dep_state)
 
+    # TODO do something better than this to figure out where snapshots should live.
     snapshot_dir = os.path.join(step_context.project_tree.build_root, 'snapshots')
     safe_mkdir(snapshot_dir)
+
     result = snapshotting_fn(dep_values[0],
-                             snapshot_dir, build_root=step_context.project_tree.build_root)
+                             snapshot_dir,
+                             build_root=step_context.project_tree.build_root)
     return Return(result)
 
 
 
 class SnapshottingRule(Rule):
-  @property
-  def input_selects(self):
-    return Select(Files)
-
-  @property
-  def output_product_type(self):
-    return Snapshot
+  input_selects = Select(Files)
+  output_product_type =Snapshot
 
   def as_node(self, subject, product_type, variants):
     assert product_type == Snapshot
+    # TODO variants
     return SnapshotNode(subject)
 
 def snapshotting_fn(file_list, archive_dir, build_root):
@@ -192,15 +189,55 @@ def process_result_to_classpath_entry(args):
   pass
 
 
-class SomeTest(SchedulerTestBase, unittest.TestCase):
+class Checkout(datatype('Checkout', ['path'])):
+  pass
 
-  def test_snapshot(self):
-    #snapshot ops
-    # unpack snapshot
-    #
-    SnapshotNode
 
+class CheckoutNode(datatype('CheckoutNode', ['subject']),Node):
+  is_inlineable = True
+  product = Checkout
+  is_cacheable = True
+
+  def step(self, step_context):
+    selector = Select(Snapshot)
+    node = step_context.select_node(selector, self.subject, None)
+    dep_state = step_context.get(node)
+    dep_values = []
+    if type(dep_state) is Waiting:
+      return Waiting([node])
+    elif type(dep_state) is Return:
+      dep_values.append(dep_state.value)
+    elif type(dep_state) is Noop:
+      if selector.optional:
+        dep_values.append(None)
+      else:
+        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+    elif type(dep_state) is Throw:
+      # NB: propagate thrown exception directly.
+      return dep_state
+    else:
+      State.raise_unrecognized(dep_state)
+
+    with temporary_dir(cleanup=False) as outdir:
+      with open_tar(dep_values[0].archive, errorlevel=1) as tar:
+        tar.extractall(outdir)
+      return Return(Checkout(outdir))
+
+
+
+  def variants(self):
     pass
+
+
+class CheckoutingRule(Rule):
+  input_selects = Select(Snapshot)
+  output_product_type = Checkout
+
+  def as_node(self, subject, product_type, variants):
+    return CheckoutNode(subject)
+
+
+class SomeTest(SchedulerTestBase, unittest.TestCase):
 
   def test_orchestration_node_in_a_unit_like_way(self):
     class FakeStepContext(object):
@@ -248,6 +285,31 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     with open_tar(snapshot.archive, errorlevel=1) as tar:
       self.assertEqual(['fs_test/a/b/1.txt', 'fs_test/a/b/2'],
                        [tar_info.path for tar_info in tar.getmembers()])
+
+  def test_checkout_pathglobs(self):
+    # a checkout is a dir with a bunch of snapshots in it
+    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(), CheckoutingRule()],
+                                  # Not sure what to put here yet.
+                                  goals=None,
+                                  project_tree=project_tree)
+
+    request = scheduler.execution_request([Checkout],
+                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
+    LocalSerialEngine(scheduler).reduce(request)
+
+    root_entries = scheduler.root_entries(request).items()
+    self.assertEquals(1, len(root_entries))
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
+    checkout = state.value
+
+    # NB arguably this could instead be a translation of a Checkout into Files or Paths
+    # Not sure if I want that at this point
+    # I think snapshot likely needs to be intrinsic / keyed off of output product + subject type.
+    # But, I'm not super sure.
+    for i in ['fs_test/a/b/1.txt', 'fs_test/a/b/2']:
+      self.assertTrue(os.path.exists(os.path.join(checkout.path, i)),
+                      'Expected {} to exist in {} but did not'.format(i, checkout.path))
 
   def test_integration_simple_concat_test(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
