@@ -35,7 +35,7 @@ class EngineTest(unittest.TestCase):
 
   def assert_engine(self, engine):
     result = engine.execute(self.request(['compile'], self.java))
-    self.assertEqual({SelectNode(self.java, Classpath, None, None, Select(Classpath)):
+    self.assertEqual({SelectNode(self.java, None, Select(Classpath)):
                       Return(Classpath(creator='javac'))},
                      result.root_products)
     self.assertIsNone(result.error)

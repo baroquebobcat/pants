@@ -679,14 +679,12 @@ class LocalScheduler(object):
     def roots():
       for subject in subjects:
         for product in products:
-          if type(subject) is Address:
-            yield SelectNode(subject, product, None, None, Select(product))
+          if type(subject) in [Address, PathGlobs]:
+            yield SelectNode(subject, None, Select(product))
           elif type(subject) in [SingleAddress, SiblingAddresses, DescendantAddresses]:
             yield DependenciesNode(subject, None, SelectDependencies(product, Addresses))
-          elif type(subject) is PathGlobs:
-            yield SelectNode(subject, product, None, None, Select(product))
           else:
-            yield SelectNode(subject, product, None, None, Select(product))
+            yield SelectNode(subject, None, Select(product))
           #else:
           #  raise ValueError('Unsupported root subject type: {}'.format(subject))
 

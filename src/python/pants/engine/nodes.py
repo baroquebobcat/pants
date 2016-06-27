@@ -144,20 +144,33 @@ class SelectNode(
   is_cacheable = False
   is_inlineable = True
 
-  def __new__(cls, subject, product, variants, variant_key, selector='Not provided a selector'):
-    return super(SelectNode, cls).__new__(cls, subject, product, variants, variant_key, selector)
+  def __new__(cls, subject, variants, selector):
 
-  def __eq__(self, other):
-    return other[:-1] == self[:-1]
+    def _new_call(subject, product, variants, variant_key, selector):
+      return super(SelectNode, cls).__new__(cls, subject, product, variants, variant_key, selector)
 
-  def __hash__(self):
-    return hash(self[:-1])
-
-  def _variants_node(self):
-    if type(self.subject) is Address and self.product is not Variants:
-      return SelectNode(self.subject, Variants, self.variants, None,
-                        Select(Variants))  # Maybe SelectVariants instead?
-    return None
+    selector_type = type(selector)
+    if selector_type is Select:
+      return _new_call(subject,
+                       selector.product,
+                       variants,
+                       None,
+                       selector)
+    elif selector_type is SelectVariant:
+      return _new_call(subject,
+                       selector.product,
+                       variants,
+                       selector.variant_key,
+                       selector)
+    elif selector_type is SelectLiteral:
+      # NB: Intentionally ignores subject parameter to provide a literal subject.
+      return _new_call(selector.subject,
+                       selector.product,
+                       variants,
+                       None,
+                       selector)
+    else:
+      raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
 
   def _select_literal(self, candidate, variant_value):
     """Looks for has-a or is-a relationships between the given value and the requested product.
@@ -187,8 +200,9 @@ class SelectNode(
     # Request default Variants for the subject, so that if there are any we can propagate
     # them to task nodes.
     variants = self.variants
-    variants_node = self._variants_node()
-    if variants_node:
+    if type(self.subject) is Address and self.product is not Variants:
+      variants_node = step_context.select_node(Select(Variants), self.subject, self.variants)
+
       dep_state = step_context.get(variants_node)
       if type(dep_state) is Waiting:
         return dep_state
@@ -275,7 +289,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
     return self.selector.field
 
   def _dep_product_node(self):
-    return SelectNode(self.subject, self.dep_product, self.variants, None, Select(self.dep_product))
+    return SelectNode(self.subject, self.variants, Select(self.dep_product))
 
   def _dependency_nodes(self, step_context, dep_product):
     for dependency in getattr(dep_product, self.field or 'dependencies'):
@@ -284,7 +298,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
         # If a subject has literal variants for particular dependencies, they win over all else.
         dependency, literal_variants = parse_variants(dependency)
         variants = Variants.merge(variants, literal_variants)
-      yield SelectNode(dependency, self.product, variants, None, Select(self.product))
+      yield SelectNode(dependency, variants, Select(self.product))
 
   def step(self, step_context):
     # Request the product we need in order to request dependencies.
@@ -345,16 +359,12 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'variants', 'selecto
   def input_product(self):
     return self.selector.input_product
 
-  def _input_node(self):
-    return SelectNode(self.subject, self.input_product, self.variants, None,
-                      Select(self.input_product))
-
   def _output_node(self, step_context, projected_subject):
-    return SelectNode(projected_subject, self.product, self.variants, None, Select(self.product))
+    return SelectNode(projected_subject, self.variants, Select(self.product))
 
   def step(self, step_context):
     # Request the product we need to compute the subject.
-    input_node = self._input_node()
+    input_node = step_context.select_node(Select(self.input_product), self.subject, self.variants)
     input_state = step_context.get(input_node)
     if type(input_state) in (Throw, Waiting):
       return input_state
@@ -378,9 +388,9 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'variants', 'selecto
     except Exception as e:
       return Throw(ValueError('Fields {} of {} could not be projected as {}: {}'.format(
         self.fields, input_product, self.projected_subject, e)))
-    output_node = self._output_node(step_context, projected_subject)
 
     # When the output node is available, return its result.
+    output_node = step_context.select_node(Select(self.product), projected_subject, self.variants)
     output_state = step_context.get(output_node)
     if type(output_state) in (Return, Throw, Waiting):
       return output_state
@@ -543,16 +553,16 @@ class StepContext(object):
     """
     selector_type = type(selector)
     if selector_type is Select:
-      return SelectNode(subject, selector.product, variants, None, selector)
+      return SelectNode(subject, variants, selector)
     elif selector_type is SelectVariant:
-      return SelectNode(subject, selector.product, variants, selector.variant_key, selector)
+      return SelectNode(subject, variants, selector)
     elif selector_type is SelectDependencies:
       return DependenciesNode(subject, variants, selector)
     elif selector_type is SelectProjection:
       return ProjectionNode(subject, variants, selector)
     elif selector_type is SelectLiteral:
       # NB: Intentionally ignores subject parameter to provide a literal subject.
-      return SelectNode(selector.subject, selector.product, variants, None, selector)
+      return SelectNode(selector.subject, variants, selector)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
 
