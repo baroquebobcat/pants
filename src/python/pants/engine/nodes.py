@@ -146,29 +146,17 @@ class SelectNode(
 
   def __new__(cls, subject, variants, selector):
 
-    def _new_call(subject, product, variants, variant_key, selector):
-      return super(SelectNode, cls).__new__(cls, subject, product, variants, variant_key, selector)
+    def _new_call(subject, variants, selector, variant_key):
+      return super(SelectNode, cls).__new__(cls, subject, selector.product, variants, variant_key, selector)
 
     selector_type = type(selector)
     if selector_type is Select:
-      return _new_call(subject,
-                       selector.product,
-                       variants,
-                       None,
-                       selector)
+      return _new_call(subject, variants, selector, None)
     elif selector_type is SelectVariant:
-      return _new_call(subject,
-                       selector.product,
-                       variants,
-                       selector.variant_key,
-                       selector)
+      return _new_call(subject, variants, selector, selector.variant_key)
     elif selector_type is SelectLiteral:
       # NB: Intentionally ignores subject parameter to provide a literal subject.
-      return _new_call(selector.subject,
-                       selector.product,
-                       variants,
-                       None,
-                       selector)
+      return _new_call(selector.subject, variants, selector, None)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
 
@@ -552,17 +540,12 @@ class StepContext(object):
     need a dependency on the `nodes` package.
     """
     selector_type = type(selector)
-    if selector_type is Select:
-      return SelectNode(subject, variants, selector)
-    elif selector_type is SelectVariant:
+    if selector_type in {Select, SelectVariant, SelectLiteral}:
       return SelectNode(subject, variants, selector)
     elif selector_type is SelectDependencies:
       return DependenciesNode(subject, variants, selector)
     elif selector_type is SelectProjection:
       return ProjectionNode(subject, variants, selector)
-    elif selector_type is SelectLiteral:
-      # NB: Intentionally ignores subject parameter to provide a literal subject.
-      return SelectNode(selector.subject, variants, selector)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
 
