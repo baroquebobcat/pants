@@ -317,9 +317,7 @@ class DependenciesNode(datatype('DependenciesNode',
     return Return(dep_values)
 
 
-class ProjectionNode(datatype('ProjectionNode',
-                              ['subject', 'product', 'variants', 'projected_subject', 'fields',
-                               'input_product', 'selector']), Node):
+class ProjectionNode(datatype('ProjectionNode', ['subject', 'variants', 'selector']), Node):
   """A Node that selects the given input Product for the Subject, and then selects for a new subject.
 
   TODO: This is semantically very similar to DependenciesNode (which might be considered to be a
@@ -328,16 +326,21 @@ class ProjectionNode(datatype('ProjectionNode',
   is_cacheable = False
   is_inlineable = True
 
-  def __new__(cls, subject, product, variants, projected_subject, fields, input_product,
-              selector='Not provided a selector'):
-    return super(ProjectionNode, cls).__new__(cls, subject, product, variants, projected_subject,
-                                              fields, input_product, selector)
+  @property
+  def product(self):
+    return self.selector.product
 
-  def __eq__(self, other):
-    return other[:-1] == self[:-1]
+  @property
+  def projected_subject(self):
+    return self.selector.projected_subject
 
-  def __hash__(self):
-    return hash(self[:-1])
+  @property
+  def fields(self):
+    return self.selector.fields
+
+  @property
+  def input_product(self):
+    return self.selector.input_product
 
   def _input_node(self):
     return SelectNode(self.subject, self.input_product, self.variants, None,
@@ -544,8 +547,7 @@ class StepContext(object):
       return DependenciesNode(subject, selector.product, variants, selector.deps_product,
                               selector.field, selector)
     elif selector_type is SelectProjection:
-      return ProjectionNode(subject, selector.product, variants, selector.projected_subject,
-                            selector.fields, selector.input_product, selector)
+      return ProjectionNode(subject, variants, selector)
     elif selector_type is SelectLiteral:
       # NB: Intentionally ignores subject parameter to provide a literal subject.
       return SelectNode(selector.subject, selector.product, variants, None, selector)
