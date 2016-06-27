@@ -264,7 +264,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
 
   @property
   def dep_product(self):
-    return self.selector.deps_product
+    return self.selector.dep_product
 
   @property
   def product(self):

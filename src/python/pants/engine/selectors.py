@@ -46,16 +46,16 @@ class SelectVariant(Repr, datatype('Variant', ['product', 'variant_key']), Selec
   optional = False
 
 
-class SelectDependencies(Repr, datatype('Dependencies', ['product', 'deps_product', 'field']), Selector):
+class SelectDependencies(Repr, datatype('Dependencies', ['product', 'dep_product', 'field']), Selector):
   """Selects a product for each of the dependencies of a product for the Subject.
 
-  The dependencies declared on `deps_product` (in the optional `field` parameter, which defaults
+  The dependencies declared on `dep_product` (in the optional `field` parameter, which defaults
   to 'dependencies' when not specified) will be provided to the requesting task in the
   order they were declared.
   """
 
-  def __new__(cls, product, deps_product, field=None):
-    return super(SelectDependencies, cls).__new__(cls, product, deps_product, field)
+  def __new__(cls, product, dep_product, field=None):
+    return super(SelectDependencies, cls).__new__(cls, product, dep_product, field)
 
   optional = False
 
