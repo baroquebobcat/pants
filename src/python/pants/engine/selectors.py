@@ -13,16 +13,6 @@ from pants.util.meta import AbstractClass
 from pants.util.objects import datatype
 
 
-class Blah(AbstractClass):
-  def __new__(cls, *args, **kwargs):
-    import inspect
-    (frame, filename, line_number,
-     function_name, lines, index) = inspect.getouterframes(inspect.currentframe())[1]
-    print(frame, filename, line_number, function_name, lines, index)
-
-    super(Blah, cls).__new__(cls, *args, **kwargs)
-
-
 class Selector(AbstractClass):
   @abstractproperty
   def optional(self):

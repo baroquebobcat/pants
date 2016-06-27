@@ -312,7 +312,7 @@ class ProductGraph(object):
 
     def _trace(entry, level):
       if is_bottom(entry):
-        print('found bottom at {}'.format(entry))
+        logger.debug('found bottom at {}'.format(entry))
         yield '{}BOTTOM'.format('  '*(level))
         yield _format(level, entry, entry.state)
 
@@ -435,7 +435,7 @@ class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'ta
   """A rule for producing nodes from task triples."""
 
   def as_node(self, subject, product_type, variants):
-    #print('constructing task node')
+    #logger.debug('constructing task node')
     assert product_type == self.output_product_type
     return TaskNode(subject, product_type, variants, self.task, self.input_selects)
 
@@ -479,9 +479,9 @@ class NodeBuilder(Closable):
         raise Exception("Unexpected rule type for entry {}".format(entry))
 
     intrinsic_rules = FilesystemNode.as_intrinsic_rules() # TODO these should be better articulated.
-    print('intrinsic table')
+    logger.debug('intrinsic table')
     for tpl, rule in intrinsic_rules.items():
-      print('{!r}:   {}'.format(tpl, rule))
+      logger.debug('{!r}:   {}'.format(tpl, rule))
     return cls(serializable_rules, intrinsic_rules)
 
   def __init__(self, rules, intrinsics):
@@ -489,27 +489,27 @@ class NodeBuilder(Closable):
     self._intrinsics = intrinsics
 
   def gen_nodes(self, subject, product_type, variants):
-    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
+    logger.debug('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
     # Intrinsic rules that provide the requested product for the current subject type.
     matching_intrinsics = self._intrinsics.get((type(subject), product_type), tuple())
     if matching_intrinsics:
-      print('  matched an intrinsic to sbj:{} prod:{} var:{}'.format(subject, product_type, variants))
+      logger.debug('  matched an intrinsic to sbj:{} prod:{} var:{}'.format(subject, product_type, variants))
       if len(matching_intrinsics) > 1:
         raise Exception('Can only have one matching intrinsic, {}'.format(matching_intrinsics))
       for rule in matching_intrinsics:
         intrinsic_node = rule.as_node(subject, product_type, variants)
-        print('  FilesystemNode(subject, product_type, variants) == intrinsic_node')
-        print(  FilesystemNode(subject, product_type, variants) == intrinsic_node)
+        logger.debug('  FilesystemNode(subject, product_type, variants) == intrinsic_node')
+        logger.debug(  FilesystemNode(subject, product_type, variants) == intrinsic_node)
         yield intrinsic_node
       return
     if FilesystemNode.is_filesystem_pair(type(subject), product_type):
-      print('got here in th matching intrinsics failure case!')
+      logger.debug('got here in th matching intrinsics failure case!')
       raise Exception("What? This should be an intrinsic!")
     # Rules that provide the requested product.
     matching_rules = self._rules[product_type]
-    print('  matching rule ct: {}'.format(len(matching_rules)))
+    logger.debug('  matching rule ct: {}'.format(len(matching_rules)))
     for rule in matching_rules:
-      print('    {}'.format(rule))
+      logger.debug('    {}'.format(rule))
       yield rule.as_node(subject, product_type, variants)
 
 

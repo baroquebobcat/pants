@@ -5,6 +5,7 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import logging
 import os
 import subprocess
 from abc import abstractproperty
@@ -17,6 +18,9 @@ from pants.util.contextutil import open_tar, temporary_dir
 from pants.util.dirutil import safe_mkdir
 from pants.util.objects import datatype
 from pants.util.process_handler import SubprocessProcessHandler
+
+
+logger = logging.getLogger(__name__)
 
 
 class Snapshot(datatype('Snapshot', ['archive'])):
@@ -85,7 +89,7 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
 
   def step(self, step_context):
     command = self.binary.prefix_of_command() + self.process_request.args
-    print('command {}'.format(command))
+    logger.debug('command {}'.format(command))
     popen = subprocess.Popen(command,
                              stderr=subprocess.PIPE,
                              stdout=subprocess.PIPE,
@@ -95,7 +99,7 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
     # Not sure why I'm doing this at this point. It might be necessary later though.
     handler_popen = SubprocessProcessHandler(popen)
     handler_popen.wait()
-    print('DONE with process exec in {}'.format(self.checkout.path))
+    logger.debug('DONE with process exec in {}'.format(self.checkout.path))
 
     return Return(
       SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read())
@@ -132,7 +136,7 @@ class ProcessOrchestrationNode(
     if type(task_state) in (Waiting, Throw):
       return task_state
     elif type(task_state) is Noop:
-      print('nooooooping 1')
+      logger.debug('nooooooping 1')
       return Noop('couldnt find something {} while looking for {}'.format(task_state,
                                                                           self.snapshotted_process.input_selectors))
       # return task_state # Maybe need a specific one where
@@ -141,13 +145,13 @@ class ProcessOrchestrationNode(
     # elif type(task_state) is Return:
     process_request = task_state.value
 
-    print("=============select inputs and map to process request finished!")
+    logger.debug("=============select inputs and map to process request finished!")
 
     binary_state = step_context.get(self._binary_select_node(step_context))
     if type(binary_state) in (Waiting, Throw):
       return binary_state
     elif type(binary_state) is Noop:
-      print('nooooooping 2')
+      logger.debug('nooooooping 2')
       return Noop('couldnt find something {} while looking for {}'.format(binary_state,
                                                                           self.snapshotted_process.binary_type))
     elif type(binary_state) is not Return:
@@ -155,7 +159,7 @@ class ProcessOrchestrationNode(
     # elif type(binary_state) is Return:
     binary_value = binary_state.value
 
-    print("========binary type found!")
+    logger.debug("========binary type found!")
 
     if process_request.snapshot_subjects:
       # There's probably a way to convert this into either a dependency op or a projection
@@ -184,7 +188,7 @@ class ProcessOrchestrationNode(
     exec_node = self._process_exec_node(binary_value, process_request, checkout)
     exec_state = step_context.get(exec_node)
     if type(exec_state) in (Waiting, Throw):
-      print('waiting or throwing for exec {}'.format(exec_state))
+      logger.debug('waiting or throwing for exec {}'.format(exec_state))
       return exec_state
     elif type(exec_state) is Noop:
       return Noop('couldnt find something {} while looking for {}'.format(exec_state, binary_value))
@@ -274,7 +278,7 @@ class SnapshottingRule(Rule):
 
 
 def snapshotting_fn(file_list, archive_dir, build_root):
-  print('snapshotting for files: {}'.format(file_list))
+  logger.debug('snapshotting for files: {}'.format(file_list))
   # TODO might need some notion of a source root for snapshots.
   tar_location = os.path.join(archive_dir, 'my-tar.tar')
   with open_tar(tar_location, mode='w:gz', ) as tar:
@@ -324,7 +328,7 @@ class OpenCheckoutNode(datatype('CheckoutNode', ['subject']), Node):
   is_cacheable = True
 
   def step(self, step_context):
-    print('yay constructing checkout for {}'.format(self.subject))
+    logger.debug('yay constructing checkout for {}'.format(self.subject))
     with temporary_dir(cleanup=False) as outdir:
       return Return(Checkout(outdir))
 
@@ -360,7 +364,7 @@ class ApplyCheckoutNode(datatype('CheckoutNode', ['subject', 'checkout']), Node)
 
     with open_tar(dep_values[0].archive, errorlevel=1) as tar:
       tar.extractall(self.checkout.path)
-    print('extracted {} snapshot to {}'.format(self.subject, self.checkout.path))
+    logger.debug('extracted {} snapshot to {}'.format(self.subject, self.checkout.path))
     return Return('DONE')
 
   def variants(self):
