@@ -10,8 +10,7 @@ import unittest
 
 from pants.engine.engine import LocalSerialEngine
 from pants.engine.fs import Files, PathGlobs
-from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule,
-                                           MultisnapshotCheckoutingRule, ProcessExecutionNode,
+from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule, ProcessExecutionNode,
                                            ProcessOrchestrationNode, Snapshot,
                                            SnapshottedProcessRequest, SnapshottedProcessResult,
                                            SnapshottingRule)
@@ -28,15 +27,15 @@ class FakeClassPath(object):
   pass
 
 
-class CoolBinary(object):
+class GenericBinary(object):
   pass
 
 
-class Blah(object):
+class NothingInParticular(object):
   pass
 
 
-def blah_to_request(args):
+def nothing_in_particular_to_request(args):
   pass
 
 
@@ -157,6 +156,15 @@ def process_result_to_classpath_entry(args):
   pass
 
 
+class SnapshottedProcessRequestTest(SchedulerTestBase, unittest.TestCase):
+  def test_converts_unhashable_args_to_tuples(self):
+    request = SnapshottedProcessRequest(args=['1'], snapshot_subjects=[])
+
+    self.assertIsInstance(request.args, tuple)
+    self.assertIsInstance(request.snapshot_subjects, tuple)
+    self.assertTrue(hash(request))
+
+
 class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
 
   # TODO orchestration unit tests
@@ -170,9 +178,9 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     # I think I shouldn't work on this one while I'm not sure I like this layout
     # Lesse
     node = ProcessOrchestrationNode('MySubject', SnapshottedProcess(FakeClassPath,
-                                                                    CoolBinary,
-                                                                    (Select(Blah),),
-                                                                    blah_to_request,
+                                                                    GenericBinary,
+                                                                    (Select(NothingInParticular),),
+                                                                    nothing_in_particular_to_request,
                                                                     request_to_fake_classpath
                                                                     ))
     context = FakeStepContext()
@@ -183,14 +191,7 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
   # TODO test if orchestration node's input creation fns returns None, the orchestration should Noop.
 
   def test_gather_snapshot_of_pathglobs(self):
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-    scheduler = self.mk_scheduler(tasks=[
-      SnapshottingRule()
-    ],
-      # Not sure what to put here yet.
-      goals=None,
-
-      project_tree=project_tree)
+    scheduler = self.mk_scheduler_in_example_fs([SnapshottingRule()])
 
     request = scheduler.execution_request([Snapshot],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
@@ -205,46 +206,16 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
       self.assertEqual(['fs_test/a/b/1.txt', 'fs_test/a/b/2'],
                        [tar_info.path for tar_info in tar.getmembers()])
 
+  def mk_example_fs_tree(self):
+    return self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+
   def test_checkout_pathglobs(self):
     # a checkout is a dir with a bunch of snapshots in it
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(),
-                                         CheckoutingRule()],
-                                  # Not sure what to put here yet.
-                                  goals=None,
-                                  project_tree=project_tree)
+    scheduler = self.mk_scheduler_in_example_fs([SnapshottingRule(),
+                                                 CheckoutingRule()])
 
     request = scheduler.execution_request([Checkout],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
-    LocalSerialEngine(scheduler).reduce(request)
-
-    root_entries = scheduler.root_entries(request).items()
-    self.assertEquals(1, len(root_entries))
-    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
-    checkout = state.value
-
-    # NB arguably this could instead be a translation of a Checkout into Files or Paths
-    # Not sure if I want that at this point
-    # I think snapshot likely needs to be intrinsic / keyed off of output product + subject type.
-    # But, I'm not super sure.
-    self.assertPathContains(['fs_test/a/b/1.txt', 'fs_test/a/b/2'], checkout.path)
-
-  def test_checkout_pathglobs2(self):
-    # a checkout is a dir with a bunch of snapshots in it
-    # Hmm. Not sure how to construct a set of rules where that makes sense
-    # Maybe if I pull in addresses and some other things?
-    # Or for testing purposes, I could create a snapshot rule for single files and a rule to bring multiple files together?
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(), MultisnapshotCheckoutingRule()],
-                                  # Not sure what to put here yet.
-                                  goals=None,
-                                  project_tree=project_tree)
-
-    self.fail('wip')
-    request = scheduler.execution_request([Checkout],
-                                          # This should request multiple snapshots projected into a single checkout somehow.
-                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
-
     LocalSerialEngine(scheduler).reduce(request)
 
     root_entries = scheduler.root_entries(request).items()
@@ -264,21 +235,12 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
                       'Expected {} to exist in {} but did not'.format(i, path))
 
   def test_integration_simple_concat_test(self):
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-
-    scheduler = self.mk_scheduler(tasks=[
-      # subject to files / product of subject to files for snapshot.
-      SnapshottedProcess(product_type=Concatted,
-                         binary_type=ShellCat,
-                         input_selectors=(Select(Files),),
-                         input_conversion=file_list_to_args_for_cat,
-                         output_conversion=process_result_to_concatted),
-      [ShellCat, [], shell_cat_binary]
-    ],
-      # Not sure what to put here yet.
-      goals=None,
-
-      project_tree=project_tree)
+    scheduler = self.mk_scheduler_in_example_fs(
+      [SnapshottedProcess(product_type=Concatted, binary_type=ShellCat,
+                          input_selectors=(Select(Files),),
+                          input_conversion=file_list_to_args_for_cat,
+                          output_conversion=process_result_to_concatted),
+       [ShellCat, [], shell_cat_binary]])
 
     request = scheduler.execution_request([Concatted],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
@@ -292,11 +254,8 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
 
   def test_integration_concat_with_snapshot_subjects_test(self):
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-
-    scheduler = self.mk_scheduler(tasks=[
+    scheduler = self.mk_scheduler_in_example_fs([
       SnapshottingRule(),
-      CheckoutingRule(),
       # subject to files / product of subject to files for snapshot.
       SnapshottedProcess(product_type=Concatted,
                          binary_type=ShellCatToOutFile,
@@ -304,11 +263,7 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
                          input_conversion=file_list_to_args_for_cat_with_snapshot_subjects_and_output_file,
                          output_conversion=process_result_to_concatted_from_outfile),
       [ShellCatToOutFile, [], to_outfile_cat_binary]
-    ],
-      # Not sure what to put here yet.
-      goals=None,
-
-      project_tree=project_tree)
+    ])
 
     request = scheduler.execution_request([Concatted],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
@@ -339,7 +294,7 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     # process exec node needs to be able to do nailgun
     binary = ShellCat()  # Not 100% sure I like this here TODO make it better.
     process_request = SnapshottedProcessRequest(['fs_test/a/b/1.txt', 'fs_test/a/b/2'])
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+    project_tree = self.mk_example_fs_tree()
 
     context = StepContext(None, project_tree, tuple(), False)
 
@@ -356,20 +311,13 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     return  # skipping rn
     sources = JavaSources(name='somethingorother',
                           files=['scheduler_inputs/src/java/simple/Simple.java'])
-    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
-    scheduler = self.mk_scheduler(tasks=[
-
-      # subject to files / product of subject to files for snapshot.
+    scheduler = self.mk_scheduler_in_example_fs([
       SnapshottedProcess(ClasspathEntry,
                          Javac, (Select(JavaSources), Select(JavaOutputDir)),
                          java_sources_to_javac_args, process_result_to_classpath_entry),
       [Javac, [], javac_bin]
-    ],
-      # Not sure what to put here yet.
-      goals=None,
-
-      project_tree=project_tree)
+    ])
 
     # maybe we want a snapshot of the classpathentry?
     request = scheduler.execution_request(
@@ -385,6 +333,12 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     self.assertIsInstance(classpath_entry, ClasspathEntry)
     self.assertTrue(os.path.exists(os.path.join(classpath_entry.path, 'simple', 'Simple.class')))
 
+  def mk_scheduler_in_example_fs(self, rules):
+    project_tree = self.mk_example_fs_tree()
+    scheduler = self.mk_scheduler(tasks=rules,
+                                  project_tree=project_tree)
+    return scheduler
+
   def assertReturn(self, state, root, scheduler):
     is_return = isinstance(state, Return)
     if is_return:
@@ -392,13 +346,3 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     else:
       self.fail('Expected a Return, but found a {}. trace below:\n{}'
                 .format(state, '\n'.join(scheduler.product_graph.trace(root))))
-      #
-      # try:
-      #  self.assertReturn(state)
-      # except AssertionError:
-      #  if isinstance(state, Noop):
-      #    for d in scheduler.product_graph.dependencies_of(root):
-      #      print(d)
-      #      print(scheduler.product_graph.state(d))
-      #    # print(tuple(scheduler.product_graph.dependencies_of(root)))
-      #    raise

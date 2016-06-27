@@ -17,7 +17,6 @@ from pants.engine.selectors import Select
 from pants.util.contextutil import open_tar, temporary_dir
 from pants.util.dirutil import safe_mkdir
 from pants.util.objects import datatype
-from pants.util.process_handler import SubprocessProcessHandler
 
 
 logger = logging.getLogger(__name__)
@@ -25,11 +24,12 @@ logger = logging.getLogger(__name__)
 
 class Snapshot(datatype('Snapshot', ['archive'])):
   """Holds a reference to the archived snapshot of something."""
-  pass
 
 
 class Binary(datatype('Binary', [])):
-  """Represents a binary in the product graph. Still working out the contract here."""
+  """Binary in the product graph.
+
+  Still working out the contract here."""
 
   @abstractproperty
   def bin_path(self):
@@ -40,18 +40,19 @@ class Binary(datatype('Binary', [])):
 
 
 class Checkout(datatype('Checkout', ['path'])):
-  pass
+  """Checkout directory of one or more snapshots."""
 
 
-class SnapshottedProcessRequest(
-  datatype('SnapshottedProcessRequest', ['args', 'snapshot_subjects'])):
-  """
-  args - arguments to the binary being run.
-  snapshot_subjects - subjects for requesting snapshots that will be checked out into the work dir for the process
+class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest',
+                                         ['args', 'snapshot_subjects'])):
+  """Request for execution with binary args and snapshots to extract.
+
+  args - Arguments to the binary being run.
+  snapshot_subjects - Subjects for requesting snapshots that will be checked out into the work dir
+                      for the process.
   """
 
   def __new__(cls, args, snapshot_subjects=tuple(), **kwargs):
-    # TODO test the below things.
     if not isinstance(args, tuple):
       args = tuple(args)
     if not isinstance(snapshot_subjects, tuple):
@@ -60,7 +61,7 @@ class SnapshottedProcessRequest(
 
 
 class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['stdout', 'stderr'])):
-  pass
+  """Contains the stdout / stderr from executing a process."""
 
 
 class UncacheableTaskNode(TaskNode):
@@ -70,12 +71,16 @@ class UncacheableTaskNode(TaskNode):
 
 class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request', 'checkout']),
                            Node):
+  """Executes processes in a checkout directory.
+
+  """
   # TODO how will this work with
   # TODO - nailgun?
-  # TODO - snapshots?
+  # An approach would be to move the actual popen etc call to the binary, or something.
 
   is_cacheable = False
   is_inlineable = False
+  variants = None
 
   def __eq__(self, other):
     if self is other:
@@ -88,119 +93,96 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
     return hash((type(self), self.binary, self.process_request))
 
   def step(self, step_context):
-    command = self.binary.prefix_of_command() + self.process_request.args
-    logger.debug('command {}'.format(command))
+    command = self.binary.prefix_of_command() + tuple(self.process_request.args)
+    logger.debug('Running command: "{}" in {}'.format(command, self.checkout.path))
+
     popen = subprocess.Popen(command,
                              stderr=subprocess.PIPE,
                              stdout=subprocess.PIPE,
-                             # TODO, clean this up so that it's a bit better abstracted
                              cwd=self.checkout.path)
+    # TODO At some point, we may want to replace this blocking wait with a timed one that returns
+    # some kind of in progress state.
+    popen.wait()
 
-    # Not sure why I'm doing this at this point. It might be necessary later though.
-    handler_popen = SubprocessProcessHandler(popen)
-    handler_popen.wait()
-    logger.debug('DONE with process exec in {}'.format(self.checkout.path))
+    logger.debug('Done running command in {}'.format(self.checkout.path))
 
     return Return(
       SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read())
     )
 
 
-class ProcessOrchestrationNode(
-  datatype('ProcessOrchestrationNode', ['subject', 'snapshotted_process']), Node):
+class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode',
+                                        ['subject', 'snapshotted_process']),
+                               Node):
+  """Wraps a process execution, preparing and tearing down the execution environment."""
+
   is_cacheable = True
   is_inlineable = False
+  variants = None
 
   @property
   def product(self):
     return self.snapshotted_process.product_type
 
   def step(self, step_context):
-    # Create task node with selects for input types and input_to_process_request.
-
-    # ...
-
-    # collect appropriate snapshots
-    #
-    # create checkout of snapshots
-    # ...
-    # Run process
-    # maybe resnapshot something in the checkout
-    # tear down checkout
-    #
-
-    # We could change how this works so that instead of
-    # something something
-    # project into snapshots something
+    # Create the request from the request callback.
     task_state = step_context.get(self._request_task_node())
     if type(task_state) in (Waiting, Throw):
       return task_state
     elif type(task_state) is Noop:
-      logger.debug('nooooooping 1')
-      return Noop('couldnt find something {} while looking for {}'.format(task_state,
-                                                                          self.snapshotted_process.input_selectors))
-      # return task_state # Maybe need a specific one where
+      return Noop("Couldn't construct process request: {}".format(task_state))
     elif type(task_state) is not Return:
       State.raise_unrecognized(task_state)
-    # elif type(task_state) is Return:
+
     process_request = task_state.value
 
-    logger.debug("=============select inputs and map to process request finished!")
-
+    # Get the binary.
     binary_state = step_context.get(self._binary_select_node(step_context))
     if type(binary_state) in (Waiting, Throw):
       return binary_state
     elif type(binary_state) is Noop:
-      logger.debug('nooooooping 2')
-      return Noop('couldnt find something {} while looking for {}'.format(binary_state,
-                                                                          self.snapshotted_process.binary_type))
+      return Noop("Couldn't find binary: {}".format(binary_state))
     elif type(binary_state) is not Return:
       State.raise_unrecognized(binary_state)
-    # elif type(binary_state) is Return:
+
     binary_value = binary_state.value
 
-    logger.debug("========binary type found!")
-
+    # If the process requires snapshots, request a checkout with the requested snapshots applied.
     if process_request.snapshot_subjects:
-      # There's probably a way to convert this into either a dependency op or a projection
+      # TODO investigate converting this into either a dependency op or a projection.
       open_node = OpenCheckoutNode(process_request)
       state_open = step_context.get(open_node)
       if type(state_open) in (Waiting, Throw, Noop):
-        return state_open  # maybe ought to have a separate noop clause
-      # else is return
+        return state_open
+
       checkout = state_open.value
 
-      sses = []
-      for ss in process_request.snapshot_subjects:
-        ss_apply_node = ApplyCheckoutNode(ss, checkout)
+      for snapshot_subject in process_request.snapshot_subjects:
+        ss_apply_node = ApplyCheckoutNode(snapshot_subject, checkout)
         ss_state = step_context.get(ss_apply_node)
         if type(ss_state) is Return:
-          sses.append(ss_state.value)
-        elif type(ss_state) in (Waiting, Throw, Noop):  # maybe ought to have a separate noop clause
+          pass # NB the return value here isn't interesting. We're purely interested in the
+               # modifications taking place.
+        elif type(ss_state) in (Waiting, Throw, Noop):
           return ss_state
-          # All of the snapshots have been checked out now.
-
-
+      # All of the snapshots have been checked out now.
     else:
-      # If there are no things to snapshot, then do no snapshotting or checking out and just use the project dir.
+      # If there are no things to snapshot, then do no snapshotting or checking out and just use the
+      # project dir.
       checkout = Checkout(step_context.project_tree.build_root)
 
     exec_node = self._process_exec_node(binary_value, process_request, checkout)
     exec_state = step_context.get(exec_node)
-    if type(exec_state) in (Waiting, Throw):
-      logger.debug('waiting or throwing for exec {}'.format(exec_state))
+    if type(exec_state) in (Waiting, Throw, Noop):
       return exec_state
-    elif type(exec_state) is Noop:
-      return Noop('couldnt find something {} while looking for {}'.format(exec_state, binary_value))
-      # return exec_state # Maybe need a specific one where
     elif type(exec_state) is not Return:
       State.raise_unrecognized(exec_state)
-    # elif type(exec_state) is Return:
+
     process_result = exec_state.value
 
     converted_output = self.snapshotted_process.output_conversion(process_result, checkout)
 
-    # TODO here: rm the checkout
+    # TODO clean up the checkout.
 
     return Return(converted_output)
 
@@ -228,43 +210,37 @@ class ProcessOrchestrationNode(
     return repr(self)
 
 
-class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
+class SnapshotNode(datatype('SnapshotNode', ['subject', 'variants']), Node):
   is_inlineable = False
-  product = Snapshot
   is_cacheable = True  # TODO need to test this somehow.
-
-  def variants(self):  # TODO do snapshots need variants? What would that mean?
-    pass
+  product = Snapshot
 
   def step(self, step_context):
     selector = Select(Files)
-    node = step_context.select_node(selector, self.subject, None)
-    dep_state = step_context.get(node)
-    dep_values = []
-    if type(dep_state) is Waiting:
-      return Waiting([node])
-    elif type(dep_state) is Return:
-      dep_values.append(dep_state.value)
-    elif type(dep_state) is Noop:
-      if selector.optional:
-        dep_values.append(None)
-      else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
-                    self.subject, dep_state)
-    elif type(dep_state) is Throw:
-      # NB: propagate thrown exception directly.
-      return dep_state
-    else:
-      State.raise_unrecognized(dep_state)
+    node = step_context.select_node(selector, self.subject, self.variants)
+    select_state = step_context.get(node)
 
-    # TODO do something better than this to figure out where snapshots should live.
-    snapshot_dir = os.path.join(step_context.project_tree.build_root, 'snapshots')
-    safe_mkdir(snapshot_dir)
+    if type(select_state) in {Waiting, Noop, Throw}:
+      return select_state
+    elif type(select_state) is not Return:
+      State.raise_unrecognized(select_state)
 
-    result = snapshotting_fn(dep_values[0],
-                             snapshot_dir,
-                             build_root=step_context.project_tree.build_root)
-    return Return(result)
+    # TODO Create / find snapshot directory via configuration.
+    build_root = step_context.project_tree.build_root
+    archive_dir = os.path.join(build_root, 'snapshots')
+    safe_mkdir(archive_dir)
+
+    file_list = select_state.value
+
+    logger.debug('snapshotting for files: {}'.format(file_list))
+    # TODO name snapshot archive based on subject, maybe.
+    tar_location = os.path.join(archive_dir, 'my-tar.tar')
+
+    with open_tar(tar_location, mode='w:gz', ) as tar:
+      for file in file_list.dependencies:
+        tar.add(os.path.join(build_root, file.path), file.path)
+
+    return Return(Snapshot(tar_location))
 
 
 class SnapshottingRule(Rule):
@@ -273,102 +249,59 @@ class SnapshottingRule(Rule):
 
   def as_node(self, subject, product_type, variants):
     assert product_type == Snapshot
-    # TODO variants
-    return SnapshotNode(subject)
-
-
-def snapshotting_fn(file_list, archive_dir, build_root):
-  logger.debug('snapshotting for files: {}'.format(file_list))
-  # TODO might need some notion of a source root for snapshots.
-  tar_location = os.path.join(archive_dir, 'my-tar.tar')
-  with open_tar(tar_location, mode='w:gz', ) as tar:
-    for file in file_list.dependencies:
-      tar.add(os.path.join(build_root, file.path), file.path)
-  return Snapshot(tar_location)
+    return SnapshotNode(subject, variants)
 
 
 class CheckoutNode(datatype('CheckoutNode', ['subject']), Node):
   is_inlineable = True
-  product = Checkout
   is_cacheable = True
+  product = Checkout
+  variants = None
 
   def step(self, step_context):
-    selector = Select(Snapshot)
-    node = step_context.select_node(selector, self.subject, None)
-    dep_state = step_context.get(node)
-    dep_values = []
-    if type(dep_state) is Waiting:
-      return Waiting([node])
-    elif type(dep_state) is Return:
-      dep_values.append(dep_state.value)
-    elif type(dep_state) is Noop:
-      if selector.optional:
-        dep_values.append(None)
-      else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
-                    self.subject, dep_state)
-    elif type(dep_state) is Throw:
-      # NB: propagate thrown exception directly.
-      return dep_state
-    else:
-      State.raise_unrecognized(dep_state)
+    node = step_context.select_node(Select(Snapshot), self.subject, None)
+    select_state = step_context.get(node)
+    if type(select_state) in {Waiting, Throw, Noop}:
+      return select_state
+    elif type(select_state) is not Return:
+      State.raise_unrecognized(select_state)
 
     with temporary_dir(cleanup=False) as outdir:
-      with open_tar(dep_values[0].archive, errorlevel=1) as tar:
+      with open_tar(select_state.value.archive, errorlevel=1) as tar:
         tar.extractall(outdir)
       return Return(Checkout(outdir))
 
-  def variants(self):
-    pass
-
 
 class OpenCheckoutNode(datatype('CheckoutNode', ['subject']), Node):
+  is_cacheable = True
   is_inlineable = False
   product = Checkout
-  is_cacheable = True
+  variants = None
 
   def step(self, step_context):
-    logger.debug('yay constructing checkout for {}'.format(self.subject))
+    logger.debug('Constructing checkout for {}'.format(self.subject))
     with temporary_dir(cleanup=False) as outdir:
       return Return(Checkout(outdir))
 
-  def variants(self):
-    pass
-
 
 class ApplyCheckoutNode(datatype('CheckoutNode', ['subject', 'checkout']), Node):
+  is_cacheable = False
   is_inlineable = False
   product = Checkout
-  is_cacheable = False
+  variants = None
 
   def step(self, step_context):
-    selector = Select(Snapshot)
-    node = step_context.select_node(selector, self.subject, None)
-    dep_state = step_context.get(node)
-    dep_values = []
-    if type(dep_state) is Waiting:
-      return Waiting([node])
-    elif type(dep_state) is Return:
-      dep_values.append(dep_state.value)
-    elif type(dep_state) is Noop:
-      if selector.optional:
-        dep_values.append(None)
-      else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
-                    self.subject, dep_state)
-    elif type(dep_state) is Throw:
-      # NB: propagate thrown exception directly.
-      return dep_state
-    else:
-      State.raise_unrecognized(dep_state)
+    node = step_context.select_node(Select(Snapshot), self.subject, None)
+    select_state = step_context.get(node)
+    if type(select_state) in {Waiting, Throw, Noop}:
+      return select_state
+    elif type(select_state) is not Return:
+      State.raise_unrecognized(select_state)
 
-    with open_tar(dep_values[0].archive, errorlevel=1) as tar:
+    with open_tar(select_state.value.archive, errorlevel=1) as tar:
       tar.extractall(self.checkout.path)
     logger.debug('extracted {} snapshot to {}'.format(self.subject, self.checkout.path))
-    return Return('DONE')
-
-  def variants(self):
-    pass
+    return Return(self.checkout)
 
 
 class CheckoutingRule(Rule):
@@ -377,7 +310,3 @@ class CheckoutingRule(Rule):
 
   def as_node(self, subject, product_type, variants):
     return CheckoutNode(subject)
-
-
-class MultisnapshotCheckoutingRule(CheckoutingRule):
-  pass
