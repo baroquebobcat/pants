@@ -229,10 +229,31 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     # But, I'm not super sure.
     self.assertPathContains(['fs_test/a/b/1.txt', 'fs_test/a/b/2'], checkout.path)
 
-  def assertPathContains(self, expected_files, path):
-    for i in expected_files:
-      self.assertTrue(os.path.exists(os.path.join(path, i)),
-                      'Expected {} to exist in {} but did not'.format(i, path))
+  def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
+    node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
+    node2 = ProcessExecutionNode('binary', 'process_request', 'checkout2')
+    node_different_binary = ProcessExecutionNode('binaryx', 'process_request', 'checkout2')
+    self.assertEqual(node1, node2)
+    self.assertEqual(hash(node1), hash(node2))
+    self.assertNotEqual(node_different_binary, node2)
+
+  def assertFirstEntryIsReturn(self, root_entries, scheduler):
+    root, state = root_entries[0]
+    self.assertReturn(state, root, scheduler)
+    return state
+
+  def test_process_exec_node_directly(self):
+    # process exec node needs to be able to do nailgun
+    binary = ShellCat()  # Not 100% sure I like this here TODO make it better.
+    process_request = SnapshottedProcessRequest(['fs_test/a/b/1.txt', 'fs_test/a/b/2'])
+    project_tree = self.mk_example_fs_tree()
+
+    context = StepContext(None, project_tree, tuple(), False)
+
+    node = ProcessExecutionNode(binary, process_request, Checkout(project_tree.build_root))
+    step_result = node.step(context)
+
+    self.assertEqual(Return(SnapshottedProcessResult(stdout='one\ntwo\n', stderr='')), step_result)
 
   def test_integration_simple_concat_test(self):
     scheduler = self.mk_scheduler_in_example_fs(
@@ -277,38 +298,11 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
   # cleanup test: output pwd during execution. assert that outputted directory is gone.
 
-  def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
-    node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
-    node2 = ProcessExecutionNode('binary', 'process_request', 'checkout2')
-    node_different_binary = ProcessExecutionNode('binaryx', 'process_request', 'checkout2')
-    self.assertEqual(node1, node2)
-    self.assertEqual(hash(node1), hash(node2))
-    self.assertNotEqual(node_different_binary, node2)
-
-  def assertFirstEntryIsReturn(self, root_entries, scheduler):
-    root, state = root_entries[0]
-    self.assertReturn(state, root, scheduler)
-    return state
-
-  def test_process_exec_node_directly(self):
-    # process exec node needs to be able to do nailgun
-    binary = ShellCat()  # Not 100% sure I like this here TODO make it better.
-    process_request = SnapshottedProcessRequest(['fs_test/a/b/1.txt', 'fs_test/a/b/2'])
-    project_tree = self.mk_example_fs_tree()
-
-    context = StepContext(None, project_tree, tuple(), False)
-
-    node = ProcessExecutionNode(binary, process_request, Checkout(project_tree.build_root))
-    step_result = node.step(context)
-
-    self.assertEqual(Return(SnapshottedProcessResult(stdout='one\ntwo\n', stderr='')), step_result)
-
   def test_more_complex_thing(self):
     # maybe I could
     # request a snapshot of writing the concatted std out to a file
     # Or, I could make a new concat process that dumps the stdout to a file in the checked out dir
     # and snapshots it
-    return  # skipping rn
     sources = JavaSources(name='somethingorother',
                           files=['scheduler_inputs/src/java/simple/Simple.java'])
 
@@ -346,3 +340,8 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     else:
       self.fail('Expected a Return, but found a {}. trace below:\n{}'
                 .format(state, '\n'.join(scheduler.product_graph.trace(root))))
+
+  def assertPathContains(self, expected_files, path):
+    for i in expected_files:
+      self.assertTrue(os.path.exists(os.path.join(path, i)),
+                      'Expected {} to exist in {} but did not'.format(i, path))

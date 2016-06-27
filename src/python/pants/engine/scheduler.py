@@ -491,7 +491,7 @@ class NodeBuilder(Closable):
   def gen_nodes(self, subject, product_type, variants):
     logger.debug('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
     # Intrinsic rules that provide the requested product for the current subject type.
-    matching_intrinsics = self._intrinsics.get((type(subject), product_type), tuple())
+    matching_intrinsics = self._lookup_intrinsics(product_type, subject)
     if matching_intrinsics:
       logger.debug('  matched an intrinsic to sbj:{} prod:{} var:{}'.format(subject, product_type, variants))
       if len(matching_intrinsics) > 1:
@@ -502,15 +502,19 @@ class NodeBuilder(Closable):
         logger.debug(  FilesystemNode(subject, product_type, variants) == intrinsic_node)
         yield intrinsic_node
       return
-    if FilesystemNode.is_filesystem_pair(type(subject), product_type):
-      logger.debug('got here in th matching intrinsics failure case!')
-      raise Exception("What? This should be an intrinsic!")
+
     # Rules that provide the requested product.
-    matching_rules = self._rules[product_type]
+    matching_rules = self._lookup_rules(product_type)
     logger.debug('  matching rule ct: {}'.format(len(matching_rules)))
     for rule in matching_rules:
       logger.debug('    {}'.format(rule))
       yield rule.as_node(subject, product_type, variants)
+
+  def _lookup_rules(self, product_type):
+    return self._rules[product_type]
+
+  def _lookup_intrinsics(self, product_type, subject):
+    return self._intrinsics.get((type(subject), product_type), tuple())
 
 
 class StepRequest(datatype('Step', ['step_id', 'node', 'dependencies', 'inline_nodes', 'project_tree'])):
