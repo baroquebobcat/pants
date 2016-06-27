@@ -246,9 +246,7 @@ class SelectNode(
       return Return(matches[0][1])
 
 
-class DependenciesNode(datatype('DependenciesNode',
-                                ['subject', 'product', 'variants', 'dep_product', 'field',
-                                 'selector']), Node):
+class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'selector']), Node):
   """A Node that selects the given Product for each of the items in `field` on `dep_product`.
 
   Begins by selecting the `dep_product` for the subject, and then selects a product for each
@@ -260,16 +258,21 @@ class DependenciesNode(datatype('DependenciesNode',
   is_cacheable = False
   is_inlineable = True
 
-  def __new__(cls, subject, product, variants, dep_product, field,
-              selector='Not provided a selector'):
-    return super(DependenciesNode, cls).__new__(cls, subject, product, variants, dep_product, field,
+  def __new__(cls, subject, variants, selector):
+    return super(DependenciesNode, cls).__new__(cls, subject, variants,
                                                 selector)
 
-  def __eq__(self, other):
-    return other[:-1] == self[:-1]
+  @property
+  def dep_product(self):
+    return self.selector.deps_product
 
-  def __hash__(self):
-    return hash(self[:-1])
+  @property
+  def product(self):
+    return self.selector.product
+
+  @property
+  def field(self):
+    return self.selector.field
 
   def _dep_product_node(self):
     return SelectNode(self.subject, self.dep_product, self.variants, None, Select(self.dep_product))
@@ -544,8 +547,7 @@ class StepContext(object):
     elif selector_type is SelectVariant:
       return SelectNode(subject, selector.product, variants, selector.variant_key, selector)
     elif selector_type is SelectDependencies:
-      return DependenciesNode(subject, selector.product, variants, selector.deps_product,
-                              selector.field, selector)
+      return DependenciesNode(subject, variants, selector)
     elif selector_type is SelectProjection:
       return ProjectionNode(subject, variants, selector)
     elif selector_type is SelectLiteral:

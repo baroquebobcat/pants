@@ -682,7 +682,7 @@ class LocalScheduler(object):
           if type(subject) is Address:
             yield SelectNode(subject, product, None, None, Select(product))
           elif type(subject) in [SingleAddress, SiblingAddresses, DescendantAddresses]:
-            yield DependenciesNode(subject, product, None, Addresses, None, SelectDependencies(product, Addresses))
+            yield DependenciesNode(subject, None, SelectDependencies(product, Addresses))
           elif type(subject) is PathGlobs:
             yield SelectNode(subject, product, None, None, Select(product))
           else:
