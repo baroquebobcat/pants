@@ -6,23 +6,19 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import os
-import tarfile
 import unittest
 
-from pants.build_graph.address import Address
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.fs import Dir, Files, PathGlob, PathGlobs, PathRoot
-from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule,  # SnapshotNode,
+from pants.engine.fs import Files, PathGlobs
+from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule,
                                            MultisnapshotCheckoutingRule, ProcessExecutionNode,
                                            ProcessOrchestrationNode, Snapshot,
                                            SnapshottedProcessRequest, SnapshottedProcessResult,
                                            SnapshottingRule)
-from pants.engine.nodes import Node, Noop, Return, State, StepContext, Throw, Waiting
-from pants.engine.rule import Rule
+from pants.engine.nodes import Return, StepContext, Waiting
 from pants.engine.scheduler import SnapshottedProcess
-from pants.engine.selectors import Select, SelectLiteral, SelectProjection
-from pants.util.contextutil import open_tar, temporary_dir
-from pants.util.dirutil import safe_mkdir
+from pants.engine.selectors import Select
+from pants.util.contextutil import open_tar
 from pants.util.objects import datatype
 from pants_test.engine.examples.planners import JavaSources
 from pants_test.engine.scheduler_test_base import SchedulerTestBase
@@ -53,7 +49,6 @@ class Concatted(datatype('Concatted', ['value'])):
 
 
 class ShellCat(Binary):
-
   @property
   def bin_path(self):
     return '/bin/cat'
@@ -64,16 +59,14 @@ def file_list_to_args_for_cat(files):
 
 
 def file_list_to_args_for_cat_with_snapshot_subjects_and_output_file(files):
-  return SnapshottedProcessRequest(args=tuple(f.path for f in files.dependencies)# +
-                                   #     ('>','outfile')
-                                   ,
+  return SnapshottedProcessRequest(args=tuple(f.path for f in files.dependencies),
                                    snapshot_subjects=[files])
+
 
 def process_result_to_concatted_from_outfile(process_result, checkout):
   with open(os.path.join(checkout.path, 'outfile')) as f:
     # TODO might be better to allow for this to be done via Nodes. But I'm not sure how as yet.
     return Concatted(f.read())
-
 
 
 def process_result_to_concatted(process_result, checkout):
@@ -84,18 +77,23 @@ def shell_cat_binary():
   # /bin/cat
   return ShellCat()
 
+
 def to_outfile_cat_binary():
   # /bin/cat
   return ShellCatToOutFile()
 
-class ShellCatToOutFile(Binary):
 
+class ShellCatToOutFile(Binary):
   def prefix_of_command(self):
     return tuple(['sh', '-c', 'cat $@ > outfile', 'unused'])
 
   @property
   def bin_path(self):
     return '/bin/cat'
+
+
+class JavaOutputDir(datatype('JavaOutputDir', ['path'])):
+  pass
 
 
 class Javac(Binary):
@@ -142,13 +140,13 @@ class Javac(Binary):
   def bin_path(self):
     return '/usr/bin/javac'
 
+
 def java_sources_to_javac_args(java_sources):
   return SnapshottedProcessRequest(args=tuple(f for f in java_sources.files))
 
 
 def javac_bin():
   return Javac()
-
 
 
 class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
@@ -159,17 +157,15 @@ def process_result_to_classpath_entry(args):
   pass
 
 
-
-class SomeTest(SchedulerTestBase, unittest.TestCase):
-
+class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
 
   # TODO orchestration unit tests
   # 1. failures on each phase
   def test_orchestration_node_in_a_unit_like_way(self):
     class FakeStepContext(object):
-
       def get(self, n):
         return Waiting([n])
+
     # What's the goal here?
     # I think I shouldn't work on this one while I'm not sure I like this layout
     # Lesse
@@ -178,29 +174,26 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
                                                                     (Select(Blah),),
                                                                     blah_to_request,
                                                                     request_to_fake_classpath
-                                                             ))
+                                                                    ))
     context = FakeStepContext()
     waiting = node.step(context)
 
     self.assertEquals(1, len(waiting.dependencies))
-
-
-
-    #self.fail()
-
+    # self.fail()
   # TODO test if orchestration node's input creation fns returns None, the orchestration should Noop.
 
   def test_gather_snapshot_of_pathglobs(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
     scheduler = self.mk_scheduler(tasks=[
-                                    SnapshottingRule()
-                                  ],
-                                  # Not sure what to put here yet.
-                                  goals=None,
+      SnapshottingRule()
+    ],
+      # Not sure what to put here yet.
+      goals=None,
 
-                                  project_tree=project_tree)
+      project_tree=project_tree)
 
-    request = scheduler.execution_request([Snapshot], [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
+    request = scheduler.execution_request([Snapshot],
+                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
     LocalSerialEngine(scheduler).reduce(request)
 
     root_entries = scheduler.root_entries(request).items()
@@ -249,7 +242,7 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
     self.fail('wip')
     request = scheduler.execution_request([Checkout],
-    # This should request multiple snapshots projected into a single checkout somehow.
+                                          # This should request multiple snapshots projected into a single checkout somehow.
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
 
     LocalSerialEngine(scheduler).reduce(request)
@@ -274,18 +267,18 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
     scheduler = self.mk_scheduler(tasks=[
-                                    # subject to files / product of subject to files for snapshot.
-                                    SnapshottedProcess(product_type=Concatted,
-                                                       binary_type=ShellCat,
-                                                       input_selectors=(Select(Files),),
-                                                       input_conversion=file_list_to_args_for_cat,
-                                                       output_conversion=process_result_to_concatted),
-                                    [ShellCat, [], shell_cat_binary]
-                                  ],
-                                  # Not sure what to put here yet.
-                                  goals=None,
+      # subject to files / product of subject to files for snapshot.
+      SnapshottedProcess(product_type=Concatted,
+                         binary_type=ShellCat,
+                         input_selectors=(Select(Files),),
+                         input_conversion=file_list_to_args_for_cat,
+                         output_conversion=process_result_to_concatted),
+      [ShellCat, [], shell_cat_binary]
+    ],
+      # Not sure what to put here yet.
+      goals=None,
 
-                                  project_tree=project_tree)
+      project_tree=project_tree)
 
     request = scheduler.execution_request([Concatted],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
@@ -297,26 +290,25 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     concatted = state.value
 
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
-
 
   def test_integration_concat_with_snapshot_subjects_test(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
     scheduler = self.mk_scheduler(tasks=[
-                                    SnapshottingRule(),
-                                    CheckoutingRule(),
-                                    # subject to files / product of subject to files for snapshot.
-                                    SnapshottedProcess(product_type=Concatted,
-                                                       binary_type=ShellCatToOutFile,
-                                                       input_selectors=(Select(Files),),
-                                                       input_conversion=file_list_to_args_for_cat_with_snapshot_subjects_and_output_file,
-                                                       output_conversion=process_result_to_concatted_from_outfile),
-                                    [ShellCatToOutFile, [], to_outfile_cat_binary]
-                                  ],
-                                  # Not sure what to put here yet.
-                                  goals=None,
+      SnapshottingRule(),
+      CheckoutingRule(),
+      # subject to files / product of subject to files for snapshot.
+      SnapshottedProcess(product_type=Concatted,
+                         binary_type=ShellCatToOutFile,
+                         input_selectors=(Select(Files),),
+                         input_conversion=file_list_to_args_for_cat_with_snapshot_subjects_and_output_file,
+                         output_conversion=process_result_to_concatted_from_outfile),
+      [ShellCatToOutFile, [], to_outfile_cat_binary]
+    ],
+      # Not sure what to put here yet.
+      goals=None,
 
-                                  project_tree=project_tree)
+      project_tree=project_tree)
 
     request = scheduler.execution_request([Concatted],
                                           [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
@@ -328,6 +320,7 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     concatted = state.value
 
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
+  # cleanup test: output pwd during execution. assert that outputted directory is gone.
 
   def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
     node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
@@ -344,7 +337,7 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
   def test_process_exec_node_directly(self):
     # process exec node needs to be able to do nailgun
-    binary = ShellCat() # Not 100% sure I like this here TODO make it better.
+    binary = ShellCat()  # Not 100% sure I like this here TODO make it better.
     process_request = SnapshottedProcessRequest(['fs_test/a/b/1.txt', 'fs_test/a/b/2'])
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
@@ -360,29 +353,29 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     # request a snapshot of writing the concatted std out to a file
     # Or, I could make a new concat process that dumps the stdout to a file in the checked out dir
     # and snapshots it
-    return # skipping rn
+    return  # skipping rn
     sources = JavaSources(name='somethingorother',
                           files=['scheduler_inputs/src/java/simple/Simple.java'])
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
     scheduler = self.mk_scheduler(tasks=[
 
-                                    # subject to files / product of subject to files for snapshot.
-                                    SnapshottedProcess(ClasspathEntry,
-                                                       Javac, (Select(JavaSources),Select(JavaOutputDir)),
-                                                       java_sources_to_javac_args, process_result_to_classpath_entry),
-                                    [Javac, [], javac_bin]
-                                  ],
-                                  # Not sure what to put here yet.
-                                  goals=None,
+      # subject to files / product of subject to files for snapshot.
+      SnapshottedProcess(ClasspathEntry,
+                         Javac, (Select(JavaSources), Select(JavaOutputDir)),
+                         java_sources_to_javac_args, process_result_to_classpath_entry),
+      [Javac, [], javac_bin]
+    ],
+      # Not sure what to put here yet.
+      goals=None,
 
-                                  project_tree=project_tree)
+      project_tree=project_tree)
 
     # maybe we want a snapshot of the classpathentry?
     request = scheduler.execution_request(
-      #[Snapshot.of(ClasspathEntry)],
+      # [Snapshot.of(ClasspathEntry)],
       [ClasspathEntry],
-                                          [sources])
+      [sources])
     LocalSerialEngine(scheduler).reduce(request)
 
     root_entries = scheduler.root_entries(request).items()
@@ -400,12 +393,12 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
       self.fail('Expected a Return, but found a {}. trace below:\n{}'
                 .format(state, '\n'.join(scheduler.product_graph.trace(root))))
       #
-    #try:
-    #  self.assertReturn(state)
-    #except AssertionError:
-    #  if isinstance(state, Noop):
-    #    for d in scheduler.product_graph.dependencies_of(root):
-    #      print(d)
-    #      print(scheduler.product_graph.state(d))
-    #    # print(tuple(scheduler.product_graph.dependencies_of(root)))
-    #    raise
+      # try:
+      #  self.assertReturn(state)
+      # except AssertionError:
+      #  if isinstance(state, Noop):
+      #    for d in scheduler.product_graph.dependencies_of(root):
+      #      print(d)
+      #      print(scheduler.product_graph.state(d))
+      #    # print(tuple(scheduler.product_graph.dependencies_of(root)))
+      #    raise

@@ -131,7 +131,8 @@ class Node(AbstractClass):
     """
 
 
-class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'variant_key', 'selector']), Node):
+class SelectNode(
+  datatype('SelectNode', ['subject', 'product', 'variants', 'variant_key', 'selector']), Node):
   """A Node that selects a product for a subject.
 
   A Select can be satisfied by multiple sources, but fails if multiple sources produce a value. The
@@ -154,7 +155,8 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
 
   def _variants_node(self):
     if type(self.subject) is Address and self.product is not Variants:
-      return SelectNode(self.subject, Variants, self.variants, None, Select(Variants)) # Maybe SelectVariants instead?
+      return SelectNode(self.subject, Variants, self.variants, None,
+                        Select(Variants))  # Maybe SelectVariants instead?
     return None
 
   def _select_literal(self, candidate, variant_value):
@@ -162,6 +164,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
 
     Returns the resulting product value, or None if no match was made.
     """
+
     def items():
       # Check whether the subject is-a instance of the product.
       yield candidate
@@ -243,7 +246,9 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
       return Return(matches[0][1])
 
 
-class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'variants', 'dep_product', 'field', 'selector']), Node):
+class DependenciesNode(datatype('DependenciesNode',
+                                ['subject', 'product', 'variants', 'dep_product', 'field',
+                                 'selector']), Node):
   """A Node that selects the given Product for each of the items in `field` on `dep_product`.
 
   Begins by selecting the `dep_product` for the subject, and then selects a product for each
@@ -255,9 +260,10 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
   is_cacheable = False
   is_inlineable = True
 
-  def __new__(cls, subject, product, variants, dep_product, field, selector='Not provided a selector'):
-    return super(DependenciesNode, cls).__new__(cls, subject, product, variants, dep_product, field, selector)
-
+  def __new__(cls, subject, product, variants, dep_product, field,
+              selector='Not provided a selector'):
+    return super(DependenciesNode, cls).__new__(cls, subject, product, variants, dep_product, field,
+                                                selector)
 
   def __eq__(self, other):
     return other[:-1] == self[:-1]
@@ -284,7 +290,9 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
     if type(dep_product_state) in (Throw, Waiting):
       return dep_product_state
     elif type(dep_product_state) is Noop:
-      return Noop('Could not compute {} to determine dependencies. \n                  orig : """{}"""', dep_product_node.selector, dep_product_state)
+      return Noop(
+        'Could not compute {} to determine dependencies. \n                  orig : """{}"""',
+        dep_product_node.selector, dep_product_state)
     elif type(dep_product_state) is not Return:
       State.raise_unrecognized(dep_product_state)
 
@@ -309,7 +317,9 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
     return Return(dep_values)
 
 
-class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants', 'projected_subject', 'fields', 'input_product', 'selector']), Node):
+class ProjectionNode(datatype('ProjectionNode',
+                              ['subject', 'product', 'variants', 'projected_subject', 'fields',
+                               'input_product', 'selector']), Node):
   """A Node that selects the given input Product for the Subject, and then selects for a new subject.
 
   TODO: This is semantically very similar to DependenciesNode (which might be considered to be a
@@ -318,8 +328,10 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants
   is_cacheable = False
   is_inlineable = True
 
-  def __new__(cls, subject, product, variants, projected_subject, fields, input_product, selector='Not provided a selector'):
-    return super(ProjectionNode, cls).__new__(cls, subject, product, variants, projected_subject, fields, input_product, selector)
+  def __new__(cls, subject, product, variants, projected_subject, fields, input_product,
+              selector='Not provided a selector'):
+    return super(ProjectionNode, cls).__new__(cls, subject, product, variants, projected_subject,
+                                              fields, input_product, selector)
 
   def __eq__(self, other):
     return other[:-1] == self[:-1]
@@ -328,7 +340,8 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants
     return hash(self[:-1])
 
   def _input_node(self):
-    return SelectNode(self.subject, self.input_product, self.variants, None, Select(self.input_product))
+    return SelectNode(self.subject, self.input_product, self.variants, None,
+                      Select(self.input_product))
 
   def _output_node(self, step_context, projected_subject):
     return SelectNode(projected_subject, self.product, self.variants, None, Select(self.product))
@@ -399,7 +412,8 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
         if selector.optional:
           dep_values.append(None)
         else:
-          return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+          return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
+                      self.subject, dep_state)
       elif type(dep_state) is Throw:
         # NB: propagate thrown exception directly.
         return dep_state
@@ -414,7 +428,7 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
       return Throw(e)
 
   def __repr__(self):
-    return 'TaskNode(subject={}, product={}, variants={}, func={}, clause={}'\
+    return 'TaskNode(subject={}, product={}, variants={}, func={}, clause={}' \
       .format(self.subject, self.product, self.variants, self.func.__name__, self.clause)
 
   def __str__(self):
@@ -432,11 +446,11 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
   # TODO, are variants needed /  used here?
 
   _FS_PAIRS = {
-      (DirectoryListing, Dir),
-      (FileContent, File),
-      (FileDigest, File),
-      (ReadLink, Link),
-    }
+    (DirectoryListing, Dir),
+    (FileContent, File),
+    (FileDigest, File),
+    (ReadLink, Link),
+  }
 
   is_cacheable = False
   is_inlineable = False
@@ -446,8 +460,6 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
     """Returns a dict of tuple(sbj type, product type) -> list of rules for that subject product type tuple."""
     return {(subject_type, product_type): [FSRule(product_type, subject_type)]
             for product_type, subject_type in cls._FS_PAIRS}
-
-
 
   @classmethod
   def is_filesystem_pair(cls, subject_type, product):
@@ -529,9 +541,11 @@ class StepContext(object):
     elif selector_type is SelectVariant:
       return SelectNode(subject, selector.product, variants, selector.variant_key, selector)
     elif selector_type is SelectDependencies:
-      return DependenciesNode(subject, selector.product, variants, selector.deps_product, selector.field, selector)
+      return DependenciesNode(subject, selector.product, variants, selector.deps_product,
+                              selector.field, selector)
     elif selector_type is SelectProjection:
-      return ProjectionNode(subject, selector.product, variants, selector.projected_subject, selector.fields, selector.input_product, selector)
+      return ProjectionNode(subject, selector.product, variants, selector.projected_subject,
+                            selector.fields, selector.input_product, selector)
     elif selector_type is SelectLiteral:
       # NB: Intentionally ignores subject parameter to provide a literal subject.
       return SelectNode(selector.subject, selector.product, variants, None, selector)

@@ -9,7 +9,7 @@ import os
 import subprocess
 from abc import abstractproperty
 
-from pants.engine.fs import Dir, Files, PathGlob
+from pants.engine.fs import Files
 from pants.engine.nodes import Node, Noop, Return, State, TaskNode, Throw, Waiting
 from pants.engine.rule import Rule
 from pants.engine.selectors import Select
@@ -39,11 +39,13 @@ class Checkout(datatype('Checkout', ['path'])):
   pass
 
 
-class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest', ['args', 'snapshot_subjects'])):
+class SnapshottedProcessRequest(
+  datatype('SnapshottedProcessRequest', ['args', 'snapshot_subjects'])):
   """
   args - arguments to the binary being run.
   snapshot_subjects - subjects for requesting snapshots that will be checked out into the work dir for the process
   """
+
   def __new__(cls, args, snapshot_subjects=tuple(), **kwargs):
     # TODO test the below things.
     if not isinstance(args, tuple):
@@ -62,7 +64,8 @@ class UncacheableTaskNode(TaskNode):
   is_cacheable = False
 
 
-class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request', 'checkout']), Node):
+class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request', 'checkout']),
+                           Node):
   # TODO how will this work with
   # TODO - nailgun?
   # TODO - snapshots?
@@ -73,8 +76,9 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
   def __eq__(self, other):
     if self is other:
       return True
-  # Compare types and fields.
-    return type(other) == type(self) and (self.binary == other.binary and self.process_request == other.process_request)
+      # Compare types and fields.
+    return type(other) == type(self) and (
+    self.binary == other.binary and self.process_request == other.process_request)
 
   def __hash__(self):
     return hash((type(self), self.binary, self.process_request))
@@ -98,7 +102,8 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
     )
 
 
-class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 'snapshotted_process']), Node):
+class ProcessOrchestrationNode(
+  datatype('ProcessOrchestrationNode', ['subject', 'snapshotted_process']), Node):
   is_cacheable = True
   is_inlineable = False
 
@@ -128,11 +133,12 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 
       return task_state
     elif type(task_state) is Noop:
       print('nooooooping 1')
-      return Noop('couldnt find something {} while looking for {}'.format(task_state, self.snapshotted_process.input_selectors))
-      #return task_state # Maybe need a specific one where
+      return Noop('couldnt find something {} while looking for {}'.format(task_state,
+                                                                          self.snapshotted_process.input_selectors))
+      # return task_state # Maybe need a specific one where
     elif type(task_state) is not Return:
       State.raise_unrecognized(task_state)
-    #elif type(task_state) is Return:
+    # elif type(task_state) is Return:
     process_request = task_state.value
 
     print("=============select inputs and map to process request finished!")
@@ -142,10 +148,11 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 
       return binary_state
     elif type(binary_state) is Noop:
       print('nooooooping 2')
-      return Noop('couldnt find something {} while looking for {}'.format(binary_state, self.snapshotted_process.binary_type))
+      return Noop('couldnt find something {} while looking for {}'.format(binary_state,
+                                                                          self.snapshotted_process.binary_type))
     elif type(binary_state) is not Return:
       State.raise_unrecognized(binary_state)
-    #elif type(binary_state) is Return:
+    # elif type(binary_state) is Return:
     binary_value = binary_state.value
 
     print("========binary type found!")
@@ -165,9 +172,9 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 
         ss_state = step_context.get(ss_apply_node)
         if type(ss_state) is Return:
           sses.append(ss_state.value)
-        elif type(ss_state) in (Waiting, Throw, Noop): # maybe ought to have a separate noop clause
+        elif type(ss_state) in (Waiting, Throw, Noop):  # maybe ought to have a separate noop clause
           return ss_state
-      # All of the snapshots have been checked out now.
+          # All of the snapshots have been checked out now.
 
 
     else:
@@ -181,10 +188,10 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 
       return exec_state
     elif type(exec_state) is Noop:
       return Noop('couldnt find something {} while looking for {}'.format(exec_state, binary_value))
-      #return exec_state # Maybe need a specific one where
+      # return exec_state # Maybe need a specific one where
     elif type(exec_state) is not Return:
       State.raise_unrecognized(exec_state)
-    #elif type(exec_state) is Return:
+    # elif type(exec_state) is Return:
     process_result = exec_state.value
 
     converted_output = self.snapshotted_process.output_conversion(process_result, checkout)
@@ -204,27 +211,25 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode', ['subject', 
 
   def _request_task_node(self):
     return UncacheableTaskNode(subject=self.subject,
-                    product=SnapshottedProcessRequest,
-                    variants=None,  # TODO figure out what this should be
-                    func=self.snapshotted_process.input_conversion,
-                    clause=self.snapshotted_process.input_selectors)
+                               product=SnapshottedProcessRequest,
+                               variants=None,  # TODO figure out what this should be
+                               func=self.snapshotted_process.input_conversion,
+                               clause=self.snapshotted_process.input_selectors)
 
   def __repr__(self):
-    return 'ProcessOrchestrationNode(subject={}, snapshotted_process={}'\
+    return 'ProcessOrchestrationNode(subject={}, snapshotted_process={}' \
       .format(self.subject, self.snapshotted_process)
 
   def __str__(self):
     return repr(self)
 
 
-
 class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
-
   is_inlineable = False
   product = Snapshot
-  is_cacheable = True # TODO need to test this somehow.
+  is_cacheable = True  # TODO need to test this somehow.
 
-  def variants(self): # TODO do snapshots need variants? What would that mean?
+  def variants(self):  # TODO do snapshots need variants? What would that mean?
     pass
 
   def step(self, step_context):
@@ -240,7 +245,8 @@ class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
       if selector.optional:
         dep_values.append(None)
       else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
+                    self.subject, dep_state)
     elif type(dep_state) is Throw:
       # NB: propagate thrown exception directly.
       return dep_state
@@ -257,24 +263,25 @@ class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
     return Return(result)
 
 
-
 class SnapshottingRule(Rule):
   input_selects = Select(Files)
-  output_product_type =Snapshot
+  output_product_type = Snapshot
 
   def as_node(self, subject, product_type, variants):
     assert product_type == Snapshot
     # TODO variants
     return SnapshotNode(subject)
 
+
 def snapshotting_fn(file_list, archive_dir, build_root):
   print('snapshotting for files: {}'.format(file_list))
   # TODO might need some notion of a source root for snapshots.
   tar_location = os.path.join(archive_dir, 'my-tar.tar')
-  with open_tar(tar_location, mode='w:gz',) as tar:
+  with open_tar(tar_location, mode='w:gz', ) as tar:
     for file in file_list.dependencies:
       tar.add(os.path.join(build_root, file.path), file.path)
   return Snapshot(tar_location)
+
 
 class CheckoutNode(datatype('CheckoutNode', ['subject']), Node):
   is_inlineable = True
@@ -294,7 +301,8 @@ class CheckoutNode(datatype('CheckoutNode', ['subject']), Node):
       if selector.optional:
         dep_values.append(None)
       else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
+                    self.subject, dep_state)
     elif type(dep_state) is Throw:
       # NB: propagate thrown exception directly.
       return dep_state
@@ -323,6 +331,7 @@ class OpenCheckoutNode(datatype('CheckoutNode', ['subject']), Node):
   def variants(self):
     pass
 
+
 class ApplyCheckoutNode(datatype('CheckoutNode', ['subject', 'checkout']), Node):
   is_inlineable = False
   product = Checkout
@@ -341,7 +350,8 @@ class ApplyCheckoutNode(datatype('CheckoutNode', ['subject', 'checkout']), Node)
       if selector.optional:
         dep_values.append(None)
       else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
+        return Noop('Was missing (at least) input for {} of {}. Original {}', selector,
+                    self.subject, dep_state)
     elif type(dep_state) is Throw:
       # NB: propagate thrown exception directly.
       return dep_state
