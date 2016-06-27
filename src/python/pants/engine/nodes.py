@@ -131,7 +131,7 @@ class Node(AbstractClass):
     """
 
 
-class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'variant_key']), Node):
+class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'variant_key', 'selector']), Node):
   """A Node that selects a product for a subject.
 
   A Select can be satisfied by multiple sources, but fails if multiple sources produce a value. The
@@ -143,9 +143,18 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
   is_cacheable = False
   is_inlineable = True
 
+  def __new__(cls, subject, product, variants, variant_key, selector='Not provided a selector'):
+    return super(SelectNode, cls).__new__(cls, subject, product, variants, variant_key, selector)
+
+  def __eq__(self, other):
+    return other[:-1] == self[:-1]
+
+  def __hash__(self):
+    return hash(self[:-1])
+
   def _variants_node(self):
     if type(self.subject) is Address and self.product is not Variants:
-      return SelectNode(self.subject, Variants, self.variants, None)
+      return SelectNode(self.subject, Variants, self.variants, None, Select(Variants)) # Maybe SelectVariants instead?
     return None
 
   def _select_literal(self, candidate, variant_value):
@@ -224,7 +233,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
     if dependencies:
       return Waiting(dependencies)
     elif len(matches) == 0:
-      return Noop('No source of {}.', self)
+      return Noop('No source of {} for {}.', self.selector, self.subject)
     elif len(matches) > 1:
       # TODO: Multiple successful tasks are not currently supported. We should allow for this
       # by adding support for "mergeable" products. see:
@@ -234,7 +243,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'product', 'variants', 'vari
       return Return(matches[0][1])
 
 
-class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'variants', 'dep_product', 'field']), Node):
+class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'variants', 'dep_product', 'field', 'selector']), Node):
   """A Node that selects the given Product for each of the items in `field` on `dep_product`.
 
   Begins by selecting the `dep_product` for the subject, and then selects a product for each
@@ -246,8 +255,18 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
   is_cacheable = False
   is_inlineable = True
 
+  def __new__(cls, subject, product, variants, dep_product, field, selector='Not provided a selector'):
+    return super(DependenciesNode, cls).__new__(cls, subject, product, variants, dep_product, field, selector)
+
+
+  def __eq__(self, other):
+    return other[:-1] == self[:-1]
+
+  def __hash__(self):
+    return hash(self[:-1])
+
   def _dep_product_node(self):
-    return SelectNode(self.subject, self.dep_product, self.variants, None)
+    return SelectNode(self.subject, self.dep_product, self.variants, None, Select(self.dep_product))
 
   def _dependency_nodes(self, step_context, dep_product):
     for dependency in getattr(dep_product, self.field or 'dependencies'):
@@ -256,7 +275,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
         # If a subject has literal variants for particular dependencies, they win over all else.
         dependency, literal_variants = parse_variants(dependency)
         variants = Variants.merge(variants, literal_variants)
-      yield SelectNode(dependency, self.product, variants, None)
+      yield SelectNode(dependency, self.product, variants, None, Select(self.product))
 
   def step(self, step_context):
     # Request the product we need in order to request dependencies.
@@ -265,7 +284,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
     if type(dep_product_state) in (Throw, Waiting):
       return dep_product_state
     elif type(dep_product_state) is Noop:
-      return Noop('Could not compute {} to determine dependencies.', dep_product_node)
+      return Noop('Could not compute {} to determine dependencies. \n                  orig : """{}"""', dep_product_node.selector, dep_product_state)
     elif type(dep_product_state) is not Return:
       State.raise_unrecognized(dep_product_state)
 
@@ -290,7 +309,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'product', 'vari
     return Return(dep_values)
 
 
-class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants', 'projected_subject', 'fields', 'input_product']), Node):
+class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants', 'projected_subject', 'fields', 'input_product', 'selector']), Node):
   """A Node that selects the given input Product for the Subject, and then selects for a new subject.
 
   TODO: This is semantically very similar to DependenciesNode (which might be considered to be a
@@ -299,11 +318,20 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants
   is_cacheable = False
   is_inlineable = True
 
+  def __new__(cls, subject, product, variants, projected_subject, fields, input_product, selector='Not provided a selector'):
+    return super(ProjectionNode, cls).__new__(cls, subject, product, variants, projected_subject, fields, input_product, selector)
+
+  def __eq__(self, other):
+    return other[:-1] == self[:-1]
+
+  def __hash__(self):
+    return hash(self[:-1])
+
   def _input_node(self):
-    return SelectNode(self.subject, self.input_product, self.variants, None)
+    return SelectNode(self.subject, self.input_product, self.variants, None, Select(self.input_product))
 
   def _output_node(self, step_context, projected_subject):
-    return SelectNode(projected_subject, self.product, self.variants, None)
+    return SelectNode(projected_subject, self.product, self.variants, None, Select(self.product))
 
   def step(self, step_context):
     # Request the product we need to compute the subject.
@@ -338,7 +366,7 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'product', 'variants
     if type(output_state) in (Return, Throw, Waiting):
       return output_state
     elif type(output_state) is Noop:
-      return Throw(ValueError('No source of projected dependency {}'.format(output_node)))
+      return Throw(ValueError('No source of projected dependency {}'.format(output_node.selector)))
     else:
       raise State.raise_unrecognized(output_state)
 
@@ -371,7 +399,7 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
         if selector.optional:
           dep_values.append(None)
         else:
-          return Noop('Was missing (at least) input {}.', dep_node)
+          return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
       elif type(dep_state) is Throw:
         # NB: propagate thrown exception directly.
         return dep_state
@@ -398,6 +426,7 @@ class FSRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
     # TODO assert that product / subject types match
     return FilesystemNode(subject, product_type, variants)
 
+
 class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants']), Node):
   """A node type for implementing filesystem operations."""
   # TODO, are variants needed /  used here?
@@ -417,6 +446,13 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
     """Returns a dict of tuple(sbj type, product type) -> list of rules for that subject product type tuple."""
     return {(subject_type, product_type): [FSRule(product_type, subject_type)]
             for product_type, subject_type in cls._FS_PAIRS}
+
+
+
+  @classmethod
+  def is_filesystem_pair(cls, subject_type, product):
+    """True if the given subject type and product type should be computed using a FileystemNode."""
+    return (product, subject_type) in cls._FS_PAIRS
 
   @classmethod
   def generate_subjects(cls, filenames):
@@ -489,16 +525,16 @@ class StepContext(object):
     """
     selector_type = type(selector)
     if selector_type is Select:
-      return SelectNode(subject, selector.product, variants, None)
+      return SelectNode(subject, selector.product, variants, None, selector)
     elif selector_type is SelectVariant:
-      return SelectNode(subject, selector.product, variants, selector.variant_key)
+      return SelectNode(subject, selector.product, variants, selector.variant_key, selector)
     elif selector_type is SelectDependencies:
-      return DependenciesNode(subject, selector.product, variants, selector.deps_product, selector.field)
+      return DependenciesNode(subject, selector.product, variants, selector.deps_product, selector.field, selector)
     elif selector_type is SelectProjection:
-      return ProjectionNode(subject, selector.product, variants, selector.projected_subject, selector.fields, selector.input_product)
+      return ProjectionNode(subject, selector.product, variants, selector.projected_subject, selector.fields, selector.input_product, selector)
     elif selector_type is SelectLiteral:
       # NB: Intentionally ignores subject parameter to provide a literal subject.
-      return SelectNode(selector.subject, selector.product, variants, None)
+      return SelectNode(selector.subject, selector.product, variants, None, selector)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
 

@@ -10,6 +10,7 @@ from collections import namedtuple
 
 def datatype(*args, **kwargs):
   """A wrapper for `namedtuple` that accounts for the type of the object in equality."""
+  #TODO should these also impl hash?
   class DataType(namedtuple(*args, **kwargs)):
     def __eq__(self, other):
       if self is other:

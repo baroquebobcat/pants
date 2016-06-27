@@ -17,6 +17,7 @@ from pants.engine.nodes import (ConflictingProducersError, DependenciesNode, Ret
                                 Throw, Waiting)
 from pants.engine.scheduler import (CompletedNodeException, IncompleteDependencyException,
                                     ProductGraph)
+from pants.engine.selectors import Select, SelectDependencies
 from pants.util.contextutil import temporary_dir
 from pants_test.engine.examples.planners import (ApacheThriftJavaConfiguration, Classpath, GenGoal,
                                                  Jar, JavaSources, ThriftSources,
@@ -117,7 +118,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Root: expect the synthetic GenGoal product.
     self.assert_root(walk,
-                     SelectNode(self.thrift, GenGoal, None, None),
+                     SelectNode(self.thrift, GenGoal, None, None, Select(GenGoal)),
                      GenGoal("non-empty input to satisfy the Goal constructor"))
 
     variants = {'thrift': 'apache_java'}
@@ -143,7 +144,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Root: expect a DependenciesNode depending on a SelectNode with compilation via javac.
     self.assert_root(walk,
-                     SelectNode(self.java, Classpath, None, None),
+                     SelectNode(self.java, Classpath, None, None, Select(Classpath)),
                      Classpath(creator='javac'))
 
     # Confirm that exactly the expected subjects got Classpaths.
@@ -157,7 +158,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Validate the root.
     self.assert_root(walk,
-                     SelectNode(self.consumes_resources, Classpath, None, None),
+                     SelectNode(self.consumes_resources, Classpath, None, None, Select(Classpath)),
                      Classpath(creator='javac'))
 
     # Confirm a classpath for the resources target and other subjects. We know that they are
@@ -174,7 +175,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Validate the root.
     self.assert_root(walk,
-                     SelectNode(self.consumes_managed_thirdparty, Classpath, None, None),
+                     SelectNode(self.consumes_managed_thirdparty, Classpath, None, None, Select(Classpath)),
                      Classpath(creator='javac'))
 
     # Confirm that we produced classpaths for the managed jars.
@@ -196,7 +197,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Validate the root.
     self.assert_root(walk,
-                     SelectNode(self.inferred_deps, Classpath, None, None),
+                     SelectNode(self.inferred_deps, Classpath, None, None, Select(Classpath)),
                      Classpath(creator='scalac'))
 
     # Confirm that we requested a classpath for the root and inferred targets.
@@ -209,7 +210,7 @@ class SchedulerTest(unittest.TestCase):
 
     # Validate that the root failed.
     self.assert_root_failed(walk,
-                            SelectNode(self.java_multi, Classpath, None, None),
+                            SelectNode(self.java_multi, Classpath, None, None, Select(Classpath)),
                             ConflictingProducersError)
 
   def test_descendant_specs(self):
@@ -221,7 +222,7 @@ class SchedulerTest(unittest.TestCase):
     # Validate the root.
     root, root_state = walk[0]
     root_value = root_state.value
-    self.assertEqual(DependenciesNode(spec, Address, None, Addresses, None), root)
+    self.assertEqual(DependenciesNode(spec, Address, None, Addresses, None, SelectDependencies(Address, Addresses)), root)
     self.assertEqual(list, type(root_value))
 
     # Confirm that a few expected addresses are in the list.
@@ -238,7 +239,7 @@ class SchedulerTest(unittest.TestCase):
     # Validate the root.
     root, root_state = walk[0]
     root_value = root_state.value
-    self.assertEqual(DependenciesNode(spec, Address, None, Addresses, None), root)
+    self.assertEqual(DependenciesNode(spec, Address, None, Addresses, None, SelectDependencies(Address, Addresses)), root)
     self.assertEqual(list, type(root_value))
 
     # Confirm that an expected address is in the list.

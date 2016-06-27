@@ -20,6 +20,7 @@ from pants.engine.nodes import (DependenciesNode, FilesystemNode, Node, Noop, Re
                                 State, StepContext, TaskNode, Throw, Waiting)
 from pants.engine.objects import Closable
 from pants.engine.rule import Rule
+from pants.engine.selectors import Select, SelectDependencies
 from pants.util.objects import datatype
 
 
@@ -66,6 +67,9 @@ class ProductGraph(object):
               {d.node for d in self.dependencies},
               {d.node for d in self.dependents},
               self.cyclic_dependencies)
+
+    def __repr__(self):
+      return 'Entry(node={!r}, state={!r})'.format(self.node, self.state)
 
   def __init__(self, validator=None):
     self._validator = validator or Node.validate_node
@@ -288,15 +292,19 @@ class ProductGraph(object):
     traced = set()
 
     def is_bottom(entry):
-      return type(entry.state) in (Noop, Return) or entry in traced
+      return type(entry.state) in (#Noop,
+                                   Return,) or entry in traced or (
+        len(entry.dependencies) == 0
+      ) or entry.node.product == None # TODO<-------- is nonsensical perhaps
+
 
     def is_one_level_above_bottom(parent_entry):
       return all(is_bottom(child_entry) for child_entry in parent_entry.dependencies)
 
     def _format(level, entry, state):
-      output = '{}Computing {} for {}'.format('  ' * level,
-                                              entry.node.product.__name__,
-                                              entry.node.subject)
+      output = '{}Computing {} for {}: nodetype: {}'.format('  ' * level,
+                                              getattr(entry.node.product, '__name__', 'Not a class'),
+                                              entry.node.subject, type(entry.node))
       if is_one_level_above_bottom(entry):
         output += '\n{}{}'.format('  ' * (level + 1), state)
 
@@ -304,6 +312,10 @@ class ProductGraph(object):
 
     def _trace(entry, level):
       if is_bottom(entry):
+        print('found bottom at {}'.format(entry))
+        yield '{}BOTTOM'.format('  '*(level))
+        yield _format(level, entry, entry.state)
+
         return
       traced.add(entry)
       yield _format(level, entry, entry.state)
@@ -423,6 +435,7 @@ class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'ta
   """A rule for producing nodes from task triples."""
 
   def as_node(self, subject, product_type, variants):
+    #print('constructing task node')
     assert product_type == self.output_product_type
     return TaskNode(subject, product_type, variants, self.task, self.input_selects)
 
@@ -460,12 +473,15 @@ class NodeBuilder(Closable):
           TaskRule(output_type, tuple(input_selects), task)
         )
       elif isinstance(entry, Rule):
-        serializable_rules[entry.product_type].add(entry)
+        serializable_rules[entry.output_product_type].add(entry)
       else:
         # TODO test to exercise
         raise Exception("Unexpected rule type for entry {}".format(entry))
 
     intrinsic_rules = FilesystemNode.as_intrinsic_rules() # TODO these should be better articulated.
+    print('intrinsic table')
+    for tpl, rule in intrinsic_rules.items():
+      print('{!r}:   {}'.format(tpl, rule))
     return cls(serializable_rules, intrinsic_rules)
 
   def __init__(self, rules, intrinsics):
@@ -473,19 +489,27 @@ class NodeBuilder(Closable):
     self._intrinsics = intrinsics
 
   def gen_nodes(self, subject, product_type, variants):
+    print('gen_nodes:\n  subject: {!r}\n  product: {!r}\n  variants: {!r}'.format(subject, product_type, variants))
     # Intrinsic rules that provide the requested product for the current subject type.
     matching_intrinsics = self._intrinsics.get((type(subject), product_type), tuple())
     if matching_intrinsics:
+      print('  matched an intrinsic to sbj:{} prod:{} var:{}'.format(subject, product_type, variants))
       if len(matching_intrinsics) > 1:
         raise Exception('Can only have one matching intrinsic, {}'.format(matching_intrinsics))
       for rule in matching_intrinsics:
-        yield rule.as_node(subject, product_type, variants)
+        intrinsic_node = rule.as_node(subject, product_type, variants)
+        print('  FilesystemNode(subject, product_type, variants) == intrinsic_node')
+        print(  FilesystemNode(subject, product_type, variants) == intrinsic_node)
+        yield intrinsic_node
       return
-
+    if FilesystemNode.is_filesystem_pair(type(subject), product_type):
+      print('got here in th matching intrinsics failure case!')
+      raise Exception("What? This should be an intrinsic!")
     # Rules that provide the requested product.
     matching_rules = self._rules[product_type]
     print('  matching rule ct: {}'.format(len(matching_rules)))
     for rule in matching_rules:
+      print('    {}'.format(rule))
       yield rule.as_node(subject, product_type, variants)
 
 
@@ -656,13 +680,13 @@ class LocalScheduler(object):
       for subject in subjects:
         for product in products:
           if type(subject) is Address:
-            yield SelectNode(subject, product, None, None)
+            yield SelectNode(subject, product, None, None, Select(product))
           elif type(subject) in [SingleAddress, SiblingAddresses, DescendantAddresses]:
-            yield DependenciesNode(subject, product, None, Addresses, None)
+            yield DependenciesNode(subject, product, None, Addresses, None, SelectDependencies(product, Addresses))
           elif type(subject) is PathGlobs:
-            yield SelectNode(subject, product, None, None)
+            yield SelectNode(subject, product, None, None, Select(product))
           else:
-            yield SelectNode(subject, product, None, None)
+            yield SelectNode(subject, product, None, None, Select(product))
           #else:
           #  raise ValueError('Unsupported root subject type: {}'.format(subject))
 

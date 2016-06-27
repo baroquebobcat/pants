@@ -13,13 +13,31 @@ from pants.util.meta import AbstractClass
 from pants.util.objects import datatype
 
 
+class Blah(AbstractClass):
+  def __new__(cls, *args, **kwargs):
+    import inspect
+    (frame, filename, line_number,
+     function_name, lines, index) = inspect.getouterframes(inspect.currentframe())[1]
+    print(frame, filename, line_number, function_name, lines, index)
+
+    super(Blah, cls).__new__(cls, *args, **kwargs)
+
+
 class Selector(AbstractClass):
   @abstractproperty
   def optional(self):
     """Return true if this Selector is optional. It may result in a `None` match."""
 
 
-class Select(datatype('Subject', ['product', 'optional']), Selector):
+class Repr(AbstractClass):
+  def __repr__(self):
+    return '{}({}{})'.format(type(self).__name__,
+                             ', '.join(x.__name__ if isinstance(x, type) else repr( x) for x in self),
+                             ', optional' if self.optional else '')
+
+
+
+class Select(Repr, datatype('Select', ['product', 'optional']), Selector):
   """Selects the given Product for the Subject provided to the constructor.
 
   If optional=True and no matching product can be produced, will return None.
@@ -29,7 +47,7 @@ class Select(datatype('Subject', ['product', 'optional']), Selector):
     return super(Select, cls).__new__(cls, product, optional)
 
 
-class SelectVariant(datatype('Variant', ['product', 'variant_key']), Selector):
+class SelectVariant(Repr, datatype('Variant', ['product', 'variant_key']), Selector):
   """Selects the matching Product and variant name for the Subject provided to the constructor.
 
   For example: a SelectVariant with a variant_key of "thrift" and a product of type ApacheThrift
@@ -39,7 +57,7 @@ class SelectVariant(datatype('Variant', ['product', 'variant_key']), Selector):
   optional = False
 
 
-class SelectDependencies(datatype('Dependencies', ['product', 'deps_product', 'field']), Selector):
+class SelectDependencies(Repr, datatype('Dependencies', ['product', 'deps_product', 'field']), Selector):
   """Selects a product for each of the dependencies of a product for the Subject.
 
   The dependencies declared on `deps_product` (in the optional `field` parameter, which defaults
@@ -53,7 +71,7 @@ class SelectDependencies(datatype('Dependencies', ['product', 'deps_product', 'f
   optional = False
 
 
-class SelectProjection(datatype('Projection', ['product', 'projected_subject', 'fields', 'input_product']), Selector):
+class SelectProjection(Repr, datatype('Projection', ['product', 'projected_subject', 'fields', 'input_product']), Selector):
   """Selects a field of the given Subject to produce a Subject, Product dependency from.
 
   Projecting an input allows for deduplication in the graph, where multiple Subjects
@@ -65,7 +83,7 @@ class SelectProjection(datatype('Projection', ['product', 'projected_subject', '
   optional = False
 
 
-class SelectLiteral(datatype('Literal', ['subject', 'product']), Selector):
+class SelectLiteral(Repr, datatype('Literal', ['subject', 'product']), Selector):
   """Selects a literal Subject (other than the one applied to the selector)."""
   optional = False
 

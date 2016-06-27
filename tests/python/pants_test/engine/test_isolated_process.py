@@ -12,9 +12,11 @@ import unittest
 from pants.build_graph.address import Address
 from pants.engine.engine import LocalSerialEngine
 from pants.engine.fs import Dir, Files, PathGlob, PathGlobs, PathRoot
-from pants.engine.isolated_process import (Binary, ProcessExecutionNode,  # SnapshotNode,
+from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule,  # SnapshotNode,
+                                           MultisnapshotCheckoutingRule, ProcessExecutionNode,
                                            ProcessOrchestrationNode, Snapshot,
-                                           SnapshottedProcessRequest, SnapshottedProcessResult)
+                                           SnapshottedProcessRequest, SnapshottedProcessResult,
+                                           SnapshottingRule)
 from pants.engine.nodes import Node, Noop, Return, State, StepContext, Throw, Waiting
 from pants.engine.rule import Rule
 from pants.engine.scheduler import SnapshottedProcess
@@ -61,7 +63,20 @@ def file_list_to_args_for_cat(files):
   return SnapshottedProcessRequest(args=tuple(f.path for f in files.dependencies))
 
 
-def process_result_to_concatted(process_result):
+def file_list_to_args_for_cat_with_snapshot_subjects_and_output_file(files):
+  return SnapshottedProcessRequest(args=tuple(f.path for f in files.dependencies)# +
+                                   #     ('>','outfile')
+                                   ,
+                                   snapshot_subjects=[files])
+
+def process_result_to_concatted_from_outfile(process_result, checkout):
+  with open(os.path.join(checkout.path, 'outfile')) as f:
+    # TODO might be better to allow for this to be done via Nodes. But I'm not sure how as yet.
+    return Concatted(f.read())
+
+
+
+def process_result_to_concatted(process_result, checkout):
   return Concatted(process_result.stdout)
 
 
@@ -69,6 +84,18 @@ def shell_cat_binary():
   # /bin/cat
   return ShellCat()
 
+def to_outfile_cat_binary():
+  # /bin/cat
+  return ShellCatToOutFile()
+
+class ShellCatToOutFile(Binary):
+
+  def prefix_of_command(self):
+    return tuple(['sh', '-c', 'cat $@ > outfile', 'unused'])
+
+  @property
+  def bin_path(self):
+    return '/bin/cat'
 
 
 class Javac(Binary):
@@ -123,63 +150,6 @@ def javac_bin():
   return Javac()
 
 
-class SnapshotNode(datatype('SnapshotNode', ['subject']), Node):
-
-  is_inlineable = False
-  product = Snapshot
-  is_cacheable = True # TODO need to test this somehow.
-
-  def variants(self): # TODO do snapshots need variants? What would that mean?
-    pass
-
-  def step(self, step_context):
-    selector = Select(Files)
-    node = step_context.select_node(selector, self.subject, None)
-    dep_state = step_context.get(node)
-    dep_values = []
-    if type(dep_state) is Waiting:
-      return Waiting([node])
-    elif type(dep_state) is Return:
-      dep_values.append(dep_state.value)
-    elif type(dep_state) is Noop:
-      if selector.optional:
-        dep_values.append(None)
-      else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
-    elif type(dep_state) is Throw:
-      # NB: propagate thrown exception directly.
-      return dep_state
-    else:
-      State.raise_unrecognized(dep_state)
-
-    # TODO do something better than this to figure out where snapshots should live.
-    snapshot_dir = os.path.join(step_context.project_tree.build_root, 'snapshots')
-    safe_mkdir(snapshot_dir)
-
-    result = snapshotting_fn(dep_values[0],
-                             snapshot_dir,
-                             build_root=step_context.project_tree.build_root)
-    return Return(result)
-
-
-
-class SnapshottingRule(Rule):
-  input_selects = Select(Files)
-  output_product_type =Snapshot
-
-  def as_node(self, subject, product_type, variants):
-    assert product_type == Snapshot
-    # TODO variants
-    return SnapshotNode(subject)
-
-def snapshotting_fn(file_list, archive_dir, build_root):
-  print('snapshotting for files: {}'.format(file_list))
-  # TODO might need some notion of a source root for snapshots.
-  tar_location = os.path.join(archive_dir, 'my-tar.tar')
-  with open_tar(tar_location, mode='w:gz',) as tar:
-    for file in file_list.dependencies:
-      tar.add(os.path.join(build_root, file.path), file.path)
-  return Snapshot(tar_location)
 
 class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
   """A classpath entry for a subject. This assumes that its the compiled classpath entry, not like, sources on the classpath or something."""
@@ -189,56 +159,12 @@ def process_result_to_classpath_entry(args):
   pass
 
 
-class Checkout(datatype('Checkout', ['path'])):
-  pass
-
-
-class CheckoutNode(datatype('CheckoutNode', ['subject']),Node):
-  is_inlineable = True
-  product = Checkout
-  is_cacheable = True
-
-  def step(self, step_context):
-    selector = Select(Snapshot)
-    node = step_context.select_node(selector, self.subject, None)
-    dep_state = step_context.get(node)
-    dep_values = []
-    if type(dep_state) is Waiting:
-      return Waiting([node])
-    elif type(dep_state) is Return:
-      dep_values.append(dep_state.value)
-    elif type(dep_state) is Noop:
-      if selector.optional:
-        dep_values.append(None)
-      else:
-        return Noop('Was missing (at least) input for {} of {}. Original {}', selector, self.subject, dep_state)
-    elif type(dep_state) is Throw:
-      # NB: propagate thrown exception directly.
-      return dep_state
-    else:
-      State.raise_unrecognized(dep_state)
-
-    with temporary_dir(cleanup=False) as outdir:
-      with open_tar(dep_values[0].archive, errorlevel=1) as tar:
-        tar.extractall(outdir)
-      return Return(Checkout(outdir))
-
-
-
-  def variants(self):
-    pass
-
-
-class CheckoutingRule(Rule):
-  input_selects = Select(Snapshot)
-  output_product_type = Checkout
-
-  def as_node(self, subject, product_type, variants):
-    return CheckoutNode(subject)
-
 
 class SomeTest(SchedulerTestBase, unittest.TestCase):
 
+
+  # TODO orchestration unit tests
+  # 1. failures on each phase
   def test_orchestration_node_in_a_unit_like_way(self):
     class FakeStepContext(object):
 
@@ -289,7 +215,8 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
   def test_checkout_pathglobs(self):
     # a checkout is a dir with a bunch of snapshots in it
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(), CheckoutingRule()],
+    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(),
+                                         CheckoutingRule()],
                                   # Not sure what to put here yet.
                                   goals=None,
                                   project_tree=project_tree)
@@ -307,9 +234,41 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     # Not sure if I want that at this point
     # I think snapshot likely needs to be intrinsic / keyed off of output product + subject type.
     # But, I'm not super sure.
-    for i in ['fs_test/a/b/1.txt', 'fs_test/a/b/2']:
-      self.assertTrue(os.path.exists(os.path.join(checkout.path, i)),
-                      'Expected {} to exist in {} but did not'.format(i, checkout.path))
+    self.assertPathContains(['fs_test/a/b/1.txt', 'fs_test/a/b/2'], checkout.path)
+
+  def test_checkout_pathglobs2(self):
+    # a checkout is a dir with a bunch of snapshots in it
+    # Hmm. Not sure how to construct a set of rules where that makes sense
+    # Maybe if I pull in addresses and some other things?
+    # Or for testing purposes, I could create a snapshot rule for single files and a rule to bring multiple files together?
+    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+    scheduler = self.mk_scheduler(tasks=[SnapshottingRule(), MultisnapshotCheckoutingRule()],
+                                  # Not sure what to put here yet.
+                                  goals=None,
+                                  project_tree=project_tree)
+
+    self.fail('wip')
+    request = scheduler.execution_request([Checkout],
+    # This should request multiple snapshots projected into a single checkout somehow.
+                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
+
+    LocalSerialEngine(scheduler).reduce(request)
+
+    root_entries = scheduler.root_entries(request).items()
+    self.assertEquals(1, len(root_entries))
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
+    checkout = state.value
+
+    # NB arguably this could instead be a translation of a Checkout into Files or Paths
+    # Not sure if I want that at this point
+    # I think snapshot likely needs to be intrinsic / keyed off of output product + subject type.
+    # But, I'm not super sure.
+    self.assertPathContains(['fs_test/a/b/1.txt', 'fs_test/a/b/2'], checkout.path)
+
+  def assertPathContains(self, expected_files, path):
+    for i in expected_files:
+      self.assertTrue(os.path.exists(os.path.join(path, i)),
+                      'Expected {} to exist in {} but did not'.format(i, path))
 
   def test_integration_simple_concat_test(self):
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
@@ -339,6 +298,45 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
 
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
 
+
+  def test_integration_concat_with_snapshot_subjects_test(self):
+    project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+
+    scheduler = self.mk_scheduler(tasks=[
+                                    SnapshottingRule(),
+                                    CheckoutingRule(),
+                                    # subject to files / product of subject to files for snapshot.
+                                    SnapshottedProcess(product_type=Concatted,
+                                                       binary_type=ShellCatToOutFile,
+                                                       input_selectors=(Select(Files),),
+                                                       input_conversion=file_list_to_args_for_cat_with_snapshot_subjects_and_output_file,
+                                                       output_conversion=process_result_to_concatted_from_outfile),
+                                    [ShellCatToOutFile, [], to_outfile_cat_binary]
+                                  ],
+                                  # Not sure what to put here yet.
+                                  goals=None,
+
+                                  project_tree=project_tree)
+
+    request = scheduler.execution_request([Concatted],
+                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
+    LocalSerialEngine(scheduler).reduce(request)
+
+    root_entries = scheduler.root_entries(request).items()
+    self.assertEquals(1, len(root_entries))
+    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
+    concatted = state.value
+
+    self.assertEqual(Concatted('one\ntwo\n'), concatted)
+
+  def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
+    node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
+    node2 = ProcessExecutionNode('binary', 'process_request', 'checkout2')
+    node_different_binary = ProcessExecutionNode('binaryx', 'process_request', 'checkout2')
+    self.assertEqual(node1, node2)
+    self.assertEqual(hash(node1), hash(node2))
+    self.assertNotEqual(node_different_binary, node2)
+
   def assertFirstEntryIsReturn(self, root_entries, scheduler):
     root, state = root_entries[0]
     self.assertReturn(state, root, scheduler)
@@ -348,11 +346,11 @@ class SomeTest(SchedulerTestBase, unittest.TestCase):
     # process exec node needs to be able to do nailgun
     binary = ShellCat() # Not 100% sure I like this here TODO make it better.
     process_request = SnapshottedProcessRequest(['fs_test/a/b/1.txt', 'fs_test/a/b/2'])
-    node = ProcessExecutionNode(binary, process_request)
-
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
+
     context = StepContext(None, project_tree, tuple(), False)
 
+    node = ProcessExecutionNode(binary, process_request, Checkout(project_tree.build_root))
     step_result = node.step(context)
 
     self.assertEqual(Return(SnapshottedProcessResult(stdout='one\ntwo\n', stderr='')), step_result)
