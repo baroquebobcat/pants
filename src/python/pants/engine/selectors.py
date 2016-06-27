@@ -36,7 +36,6 @@ class Repr(AbstractClass):
                              ', optional' if self.optional else '')
 
 
-
 class Select(Repr, datatype('Select', ['product', 'optional']), Selector):
   """Selects the given Product for the Subject provided to the constructor.
 
