@@ -33,14 +33,14 @@ seen in the jvm compilers to the wider pants world of tasks.
 
 #### End User API
 
-The end user API for the engine is based on the registration of production rules or "task triples"
+The end user API for the engine is based on the registration of "task triples" (name TBD)
 which are made up of:
 
 1. the `Product` or return type for a function,
 2. a list of dependency `Selectors` which match inputs to a function,
 3. a reference to the function for those inputs and that output.
 
-The task triple fully declares the input and output types for a function: there is no imperative
+The task triple fully declares the inputs and outputs for a function: there is no imperative
 API for requesting additional inputs during execution of a function. While a tight constraint,
 this has the advantage of forcing decomposition of work into functions which are loosely
 coupled by only the types of their inputs and outputs, and which are naturally isolated, cacheable,
