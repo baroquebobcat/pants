@@ -540,14 +540,3 @@ class StepContext(object):
       return ProjectionNode(subject, variants, selector)
     else:
       raise ValueError('Unrecognized Selector type "{}" for: {}'.format(selector_type, selector))
-
-  def __repr__(self):
-    return 'StepContext(node_builder={}, ' \
-           'project_tree={}, ' \
-           'len(node_states)={}, ' \
-           'len(parents)={}, ' \
-           'inline_nodes={})'.format(self._node_builder,
-                                     self.project_tree,
-                                     len(self._node_states),
-                                     len(self._parents),
-                                     self._inline_nodes)
