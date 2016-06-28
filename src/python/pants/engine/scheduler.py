@@ -556,7 +556,7 @@ class LocalScheduler(object):
 
   def __init__(self,
                goals,
-               rules,
+               tasks,
                project_tree,
                graph_lock=None,
                inline_nodes=True,
@@ -564,7 +564,7 @@ class LocalScheduler(object):
     """
     :param goals: A dict from a goal name to a product type. A goal is just an alias for a
            particular (possibly synthetic) product.
-    :param rules: A set of (output, input selection clause, task function) triples which
+    :param tasks: A set of (output, input selection clause, task function) triples which
            is used to compute values in the product graph.
     :param project_tree: An instance of ProjectTree for the current build root.
     :param graph_lock: A re-entrant lock to use for guarding access to the internal ProductGraph
@@ -577,8 +577,7 @@ class LocalScheduler(object):
     """
     self._products_by_goal = goals
     self._project_tree = project_tree
-
-    self._node_builder = NodeBuilder.create(rules)
+    self._node_builder = NodeBuilder.create(tasks)
 
     self._graph_validator = graph_validator
     self._product_graph = ProductGraph()
@@ -666,19 +665,6 @@ class LocalScheduler(object):
     """
 
     # Determine the root Nodes for the products and subjects selected by the goals and specs.
-    # TODO nh: it would be better if this were not tied to particular types.
-    # I'm not quite sure how it ought to work though. Maybe if we had root rules.
-    # Since rules are lhs type, rhs input types + as_node,
-    # Hm.
-    # Maybe something like
-    # for subject in subjects:
-    #   for product_type in products:
-    #     root_rule.get(type(subject), default_root_rule).as_node(subject, product_type, None)
-    #
-    # then root rules could look like
-    # class PathGlobsRoot():
-    #   def as_node...
-    # This way too, you could make tests that start with root types that are different, without hardcoding here.
     def roots():
       for subject in subjects:
         for product in products:
@@ -687,9 +673,7 @@ class LocalScheduler(object):
           elif type(subject) in [SingleAddress, SiblingAddresses, DescendantAddresses]:
             yield DependenciesNode(subject, None, SelectDependencies(product, Addresses))
           else:
-            yield SelectNode(subject, None, Select(product))
-          #else:
-          #  raise ValueError('Unsupported root subject type: {}'.format(subject))
+            raise ValueError('Unsupported root subject type: {}'.format(subject))
 
     return ExecutionRequest(tuple(roots()))
 
