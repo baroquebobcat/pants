@@ -254,8 +254,8 @@ def hydrate_bundles(bundles_field, files_digest_list, excluded_files_list):
   return HydratedField('bundles', bundles)
 
 
-def create_legacy_graph_rules():
-  """Create rules to define how to recursively parse the legacy graph."""
+def create_legacy_graph_tasks():
+  """Create tasks to recursively parse the legacy graph."""
   return [
     # Recursively requests the dependencies and adapted fields of TargetAdaptors, which
     # will result in an eager, transitive graph walk.

@@ -435,7 +435,6 @@ class TaskRule(datatype('TaskRule', ['output_product_type', 'input_selects', 'ta
   """A rule for producing nodes from task triples."""
 
   def as_node(self, subject, product_type, variants):
-    #logger.debug('constructing task node')
     assert product_type == self.output_product_type
     return TaskNode(subject, product_type, variants, self.task, self.input_selects)
 
