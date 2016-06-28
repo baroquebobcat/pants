@@ -258,26 +258,6 @@ class SnapshottingRule(Rule):
     return SnapshotNode(subject, variants)
 
 
-class CheckoutNode(datatype('CheckoutNode', ['subject']), Node):
-  is_inlineable = True
-  is_cacheable = True
-  product = Checkout
-  variants = None
-
-  def step(self, step_context):
-    node = step_context.select_node(Select(Snapshot), self.subject, None)
-    select_state = step_context.get(node)
-    if type(select_state) in {Waiting, Throw, Noop}:
-      return select_state
-    elif type(select_state) is not Return:
-      State.raise_unrecognized(select_state)
-
-    with temporary_dir(cleanup=False) as outdir:
-      with open_tar(select_state.value.archive, errorlevel=1) as tar:
-        tar.extractall(outdir)
-      return Return(Checkout(outdir))
-
-
 class OpenCheckoutNode(datatype('CheckoutNode', ['subject']), Node):
   is_cacheable = True
   is_inlineable = False
@@ -308,11 +288,3 @@ class ApplyCheckoutNode(datatype('CheckoutNode', ['subject', 'checkout']), Node)
       tar.extractall(self.checkout.path)
     logger.debug('extracted {} snapshot to {}'.format(self.subject, self.checkout.path))
     return Return(self.checkout)
-
-
-class CheckoutingRule(Rule):
-  input_selects = Select(Snapshot)
-  output_product_type = Checkout
-
-  def as_node(self, subject, product_type, variants):
-    return CheckoutNode(subject)

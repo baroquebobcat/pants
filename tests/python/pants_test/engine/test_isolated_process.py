@@ -11,11 +11,10 @@ from functools import partial
 
 from pants.engine.engine import LocalSerialEngine
 from pants.engine.fs import Files, PathGlobs
-from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule, ProcessExecutionNode,
-                                           ProcessOrchestrationNode, Snapshot,
+from pants.engine.isolated_process import (Binary, Checkout, ProcessExecutionNode, Snapshot,
                                            SnapshottedProcessRequest, SnapshottedProcessResult,
                                            SnapshottingRule)
-from pants.engine.nodes import Return, StepContext, Waiting
+from pants.engine.nodes import Return, StepContext
 from pants.engine.scheduler import SnapshottedProcess
 from pants.engine.selectors import Select, SelectLiteral
 from pants.util.contextutil import open_tar
