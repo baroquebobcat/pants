@@ -406,8 +406,6 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
     for selector in self.clause:
       dep_node = step_context.select_node(selector, self.subject, self.variants)
       dep_state = step_context.get(dep_node)
-      # NB If the select node is waiting, don't wait for it. Instead, wait for its dependencies
-      # directly. nh: I find this a little confusing
       if type(dep_state) is Waiting:
         dependencies.extend(dep_state.dependencies)
       elif type(dep_state) is Return:
@@ -489,7 +487,6 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
         # This would be caused by a mismatch between _FS_PRODUCT_TYPES and the above switch.
         raise ValueError('Mismatched input value {} for {}'.format(self.subject, self))
     except Exception as e:
-      # TODO test that the errors from this are actionable and not confusing.
       return Throw(e)
 
 

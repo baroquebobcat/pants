@@ -74,12 +74,10 @@ def process_result_to_concatted(process_result, checkout):
 
 
 def shell_cat_binary():
-  # /bin/cat
   return ShellCat()
 
 
 def to_outfile_cat_binary():
-  # /bin/cat
   return ShellCatToOutFile()
 
 
@@ -97,44 +95,6 @@ class JavaOutputDir(datatype('JavaOutputDir', ['path'])):
 
 
 class Javac(Binary):
-  """
-  $ javac -help
-  Usage: javac <options> <source files>
-  where possible options include:
-    -g                         Generate all debugging info
-    -g:none                    Generate no debugging info
-    -g:{lines,vars,source}     Generate only some debugging info
-    -nowarn                    Generate no warnings
-    -verbose                   Output messages about what the compiler is doing
-    -deprecation               Output source locations where deprecated APIs are used
-    -classpath <path>          Specify where to find user class files and annotation processors
-    -cp <path>                 Specify where to find user class files and annotation processors
-    -sourcepath <path>         Specify where to find input source files
-    -bootclasspath <path>      Override location of bootstrap class files
-    -extdirs <dirs>            Override location of installed extensions
-    -endorseddirs <dirs>       Override location of endorsed standards path
-    -proc:{none,only}          Control whether annotation processing and/or compilation is done.
-    -processor <class1>[,<class2>,<class3>...] Names of the annotation processors to run; bypasses default discovery process
-    -processorpath <path>      Specify where to find annotation processors
-    -parameters                Generate metadata for reflection on method parameters
-    -d <directory>             Specify where to place generated class files
-    -s <directory>             Specify where to place generated source files
-    -h <directory>             Specify where to place generated native header files
-    -implicit:{none,class}     Specify whether or not to generate class files for implicitly referenced files
-    -encoding <encoding>       Specify character encoding used by source files
-    -source <release>          Provide source compatibility with specified release
-    -target <release>          Generate class files for specific VM version
-    -profile <profile>         Check that API used is available in the specified profile
-    -version                   Version information
-    -help                      Print a synopsis of standard options
-    -Akey[=value]              Options to pass to annotation processors
-    -X                         Print a synopsis of nonstandard options
-    -J<flag>                   Pass <flag> directly to the runtime system
-    -Werror                    Terminate compilation if warnings occur
-    @<filename>                Read options and filenames from file
-
-
-  """
 
   @property
   def bin_path(self):
@@ -157,7 +117,7 @@ def javac_bin():
 
 
 class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
-  """A classpath entry for a subject. This assumes that its the compiled classpath entry, not like, sources on the classpath or something."""
+  """A classpath entry for a subject."""
 
 
 def process_result_to_classpath_entry(process_result, checkout):
@@ -178,29 +138,6 @@ class SnapshottedProcessRequestTest(SchedulerTestBase, unittest.TestCase):
 
 class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
 
-  # TODO orchestration unit tests
-  # 1. failures on each phase
-  def test_orchestration_node_in_a_unit_like_way(self):
-    class FakeStepContext(object):
-      def get(self, n):
-        return Waiting([n])
-
-    # What's the goal here?
-    # I think I shouldn't work on this one while I'm not sure I like this layout
-    # Lesse
-    node = ProcessOrchestrationNode('MySubject', SnapshottedProcess(FakeClassPath,
-                                                                    GenericBinary,
-                                                                    (Select(NothingInParticular),),
-                                                                    nothing_in_particular_to_request,
-                                                                    request_to_fake_classpath
-                                                                    ))
-    context = FakeStepContext()
-    waiting = node.step(context)
-
-    self.assertEquals(1, len(waiting.dependencies))
-    # self.fail()
-  # TODO test if orchestration node's input creation fns returns None, the orchestration should Noop.
-
   def test_gather_snapshot_of_pathglobs(self):
     scheduler = self.mk_scheduler_in_example_fs([SnapshottingRule()])
 
@@ -217,29 +154,6 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
       self.assertEqual(['fs_test/a/b/1.txt', 'fs_test/a/b/2'],
                        [tar_info.path for tar_info in tar.getmembers()])
 
-  def mk_example_fs_tree(self):
-    return self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-
-  def test_checkout_pathglobs(self):
-    # a checkout is a dir with a bunch of snapshots in it
-    scheduler = self.mk_scheduler_in_example_fs([SnapshottingRule(),
-                                                 CheckoutingRule()])
-
-    request = scheduler.execution_request([Checkout],
-                                          [PathGlobs.create('', rglobs=['fs_test/a/b/*'])])
-    LocalSerialEngine(scheduler).reduce(request)
-
-    root_entries = scheduler.root_entries(request).items()
-    self.assertEquals(1, len(root_entries))
-    state = self.assertFirstEntryIsReturn(root_entries, scheduler)
-    checkout = state.value
-
-    # NB arguably this could instead be a translation of a Checkout into Files or Paths
-    # Not sure if I want that at this point
-    # I think snapshot likely needs to be intrinsic / keyed off of output product + subject type.
-    # But, I'm not super sure.
-    self.assertPathContains(['fs_test/a/b/1.txt', 'fs_test/a/b/2'], checkout.path)
-
   def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
     node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
     node2 = ProcessExecutionNode('binary', 'process_request', 'checkout2')
@@ -247,11 +161,6 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     self.assertEqual(node1, node2)
     self.assertEqual(hash(node1), hash(node2))
     self.assertNotEqual(node_different_binary, node2)
-
-  def assertFirstEntryIsReturn(self, root_entries, scheduler):
-    root, state = root_entries[0]
-    self.assertReturn(state, root, scheduler)
-    return state
 
   def test_process_exec_node_directly(self):
     # process exec node needs to be able to do nailgun
@@ -307,9 +216,8 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     concatted = state.value
 
     self.assertEqual(Concatted('one\ntwo\n'), concatted)
-  # cleanup test: output pwd during execution. assert that outputted directory is gone.
 
-  def test_more_complex_thing(self):
+  def test_javac_compilation_example(self):
     sources = PathGlobs.create('', files=['scheduler_inputs/src/java/simple/Simple.java'])
 
     scheduler = self.mk_scheduler_in_example_fs([
@@ -322,9 +230,7 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
       [Javac, [], javac_bin]
     ])
 
-    # maybe we want a snapshot of the classpathentry?
     request = scheduler.execution_request(
-      # [Snapshot.of(ClasspathEntry)],
       [ClasspathEntry],
       [sources])
     LocalSerialEngine(scheduler).reduce(request)
@@ -335,6 +241,14 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     classpath_entry = state.value
     self.assertIsInstance(classpath_entry, ClasspathEntry)
     self.assertTrue(os.path.exists(os.path.join(classpath_entry.path, 'simple', 'Simple.class')))
+
+  def assertFirstEntryIsReturn(self, root_entries, scheduler):
+    root, state = root_entries[0]
+    self.assertReturn(state, root, scheduler)
+    return state
+
+  def mk_example_fs_tree(self):
+    return self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
 
   def mk_scheduler_in_example_fs(self, rules):
     project_tree = self.mk_example_fs_tree()

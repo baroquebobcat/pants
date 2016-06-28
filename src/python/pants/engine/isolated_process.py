@@ -242,7 +242,7 @@ class SnapshotNode(datatype('SnapshotNode', ['subject', 'variants']), Node):
     # TODO name snapshot archive based on subject, maybe.
     tar_location = os.path.join(archive_dir, 'my-tar.tar')
 
-    with open_tar(tar_location, mode='w:gz', ) as tar:
+    with open_tar(tar_location, mode='w:gz') as tar:
       for file in file_list.dependencies:
         tar.add(os.path.join(build_root, file.path), file.path)
 

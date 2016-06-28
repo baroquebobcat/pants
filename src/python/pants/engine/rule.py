@@ -30,7 +30,3 @@ class Rule(AbstractClass):
   @abstractproperty
   def input_selects(self):
     """The input types for the right hand side expression of this rule."""
-    pass
-
-  def blah(self):
-    return "{} of S -: {}".format(self.output_product_type, ', '.join('{} of S'.format(self.input_selects)))
