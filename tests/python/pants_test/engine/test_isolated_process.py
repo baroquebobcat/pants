@@ -153,14 +153,6 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
       self.assertEqual(['fs_test/a/b/1.txt', 'fs_test/a/b/2'],
                        [tar_info.path for tar_info in tar.getmembers()])
 
-  def test_process_exec_node_checkout_not_part_of_eq_or_hash(self):
-    node1 = ProcessExecutionNode('binary', 'process_request', 'checkout1')
-    node2 = ProcessExecutionNode('binary', 'process_request', 'checkout2')
-    node_different_binary = ProcessExecutionNode('binaryx', 'process_request', 'checkout2')
-    self.assertEqual(node1, node2)
-    self.assertEqual(hash(node1), hash(node2))
-    self.assertNotEqual(node_different_binary, node2)
-
   def test_process_exec_node_directly(self):
     # process exec node needs to be able to do nailgun
     binary = ShellCat()  # Not 100% sure I like this here TODO make it better.

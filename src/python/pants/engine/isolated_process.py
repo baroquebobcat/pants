@@ -74,26 +74,11 @@ class UncacheableTaskNode(TaskNode):
 
 class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request', 'checkout']),
                            Node):
-  """Executes processes in a checkout directory.
-
-  """
-  # TODO how will this work with
-  # TODO - nailgun?
-  # An approach would be to move the actual popen etc call to the binary, or something.
+  """Executes processes in a checkout directory."""
 
   is_cacheable = False
   is_inlineable = False
   variants = None
-
-  def __eq__(self, other):
-    if self is other:
-      return True
-      # Compare types and fields.
-    return type(other) == type(self) and (
-    self.binary == other.binary and self.process_request == other.process_request)
-
-  def __hash__(self):
-    return hash((type(self), self.binary, self.process_request))
 
   def step(self, step_context):
     command = self.binary.prefix_of_command() + tuple(self.process_request.args)
@@ -218,7 +203,7 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode',
 
 class SnapshotNode(datatype('SnapshotNode', ['subject', 'variants']), Node):
   is_inlineable = False
-  is_cacheable = True  # TODO need to test this somehow.
+  is_cacheable = True
   product = Snapshot
 
   def step(self, step_context):
