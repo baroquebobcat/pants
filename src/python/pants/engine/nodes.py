@@ -437,22 +437,23 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
     return repr(self)
 
 
-class FilesystemRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
+class FilesystemRule(datatype('FSRule', ['output_product_type', 'subject_type']), Rule):
   def as_node(self, subject, product_type, variants):
-    # TODO assert that product / subject types match
+    assert self.subject_type == type(subject)
+    assert self.output_product_type == product_type
+
     return FilesystemNode(subject, product_type, variants)
 
 
 class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants']), Node):
-  """A node type for implementing filesystem operations."""
-  # TODO, are variants needed /  used here?
+  """A native node type for filesystem operations."""
 
   _FS_PAIRS = {
-    (DirectoryListing, Dir),
-    (FileContent, File),
-    (FileDigest, File),
-    (ReadLink, Link),
-  }
+      (DirectoryListing, Dir),
+      (FileContent, File),
+      (FileDigest, File),
+      (ReadLink, Link),
+    }
 
   is_cacheable = False
   is_inlineable = False
