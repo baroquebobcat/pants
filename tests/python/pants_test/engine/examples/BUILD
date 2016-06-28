@@ -88,27 +88,3 @@ python_binary(
     ':visualizer'
   ]
 )
-
-
-python_library(
-  name='calculator',
-  sources=['calculator.py'],
-  dependencies=[
-    ':planners',
-    'src/python/pants/base:cmd_line_spec_parser',
-    'src/python/pants/binaries:binary_util',
-    'src/python/pants/build_graph',
-    'src/python/pants/engine:engine',
-    'src/python/pants/engine:scheduler',
-    'src/python/pants/util:contextutil',
-  ]
-)
-
-
-python_binary(
-  name='calc',
-  entry_point='pants_test.engine.examples.calculator:main_addresses',
-  dependencies=[
-    ':calculator'
-  ]
-)
