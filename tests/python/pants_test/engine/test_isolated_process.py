@@ -7,6 +7,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 import os
 import unittest
+from functools import partial
 
 from pants.engine.engine import LocalSerialEngine
 from pants.engine.fs import Files, PathGlobs
@@ -16,10 +17,10 @@ from pants.engine.isolated_process import (Binary, Checkout, CheckoutingRule, Pr
                                            SnapshottingRule)
 from pants.engine.nodes import Return, StepContext, Waiting
 from pants.engine.scheduler import SnapshottedProcess
-from pants.engine.selectors import Select
+from pants.engine.selectors import Select, SelectLiteral
 from pants.util.contextutil import open_tar
+from pants.util.dirutil import safe_mkdir
 from pants.util.objects import datatype
-from pants_test.engine.examples.planners import JavaSources
 from pants_test.engine.scheduler_test_base import SchedulerTestBase
 
 
@@ -140,8 +141,15 @@ class Javac(Binary):
     return '/usr/bin/javac'
 
 
-def java_sources_to_javac_args(java_sources):
-  return SnapshottedProcessRequest(args=tuple(f for f in java_sources.files))
+def create_outdir(out_dir, checkout):
+  safe_mkdir(os.path.join(checkout.path, out_dir.path))
+
+
+def java_sources_to_javac_args(java_sources, out_dir):
+  return SnapshottedProcessRequest(args=('-d', out_dir.path)+
+                                        tuple(f.path for f in java_sources.dependencies),
+                                   snapshot_subjects=[java_sources],
+                                   prep_fn=partial(create_outdir, out_dir))
 
 
 def javac_bin():
@@ -152,8 +160,11 @@ class ClasspathEntry(datatype('ClasspathEntry', ['path'])):
   """A classpath entry for a subject. This assumes that its the compiled classpath entry, not like, sources on the classpath or something."""
 
 
-def process_result_to_classpath_entry(args):
-  pass
+def process_result_to_classpath_entry(process_result, checkout):
+  if not process_result.exit_code:
+    # this implies that we should pass some / all of the inputs to the output conversion so they can grab config.
+    # TODO string name association isn't great.
+    return ClasspathEntry(os.path.join(checkout.path, 'build'))
 
 
 class SnapshottedProcessRequestTest(SchedulerTestBase, unittest.TestCase):
@@ -253,7 +264,7 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
     node = ProcessExecutionNode(binary, process_request, Checkout(project_tree.build_root))
     step_result = node.step(context)
 
-    self.assertEqual(Return(SnapshottedProcessResult(stdout='one\ntwo\n', stderr='')), step_result)
+    self.assertEqual(Return(SnapshottedProcessResult(stdout='one\ntwo\n', stderr='', exit_code=0)), step_result)
 
   def test_integration_simple_concat_test(self):
     scheduler = self.mk_scheduler_in_example_fs(
@@ -299,17 +310,15 @@ class IsolatedProcessTest(SchedulerTestBase, unittest.TestCase):
   # cleanup test: output pwd during execution. assert that outputted directory is gone.
 
   def test_more_complex_thing(self):
-    # maybe I could
-    # request a snapshot of writing the concatted std out to a file
-    # Or, I could make a new concat process that dumps the stdout to a file in the checked out dir
-    # and snapshots it
-    sources = JavaSources(name='somethingorother',
-                          files=['scheduler_inputs/src/java/simple/Simple.java'])
+    sources = PathGlobs.create('', files=['scheduler_inputs/src/java/simple/Simple.java'])
 
     scheduler = self.mk_scheduler_in_example_fs([
+      SnapshottingRule(),
       SnapshottedProcess(ClasspathEntry,
-                         Javac, (Select(JavaSources), Select(JavaOutputDir)),
-                         java_sources_to_javac_args, process_result_to_classpath_entry),
+                         Javac,
+                         (Select(Files), SelectLiteral(JavaOutputDir('build'), JavaOutputDir)),
+                         java_sources_to_javac_args,
+                         process_result_to_classpath_entry),
       [Javac, [], javac_bin]
     ])
 

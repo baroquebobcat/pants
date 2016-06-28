@@ -439,7 +439,7 @@ class TaskNode(datatype('TaskNode', ['subject', 'product', 'variants', 'func', '
     return repr(self)
 
 
-class FSRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
+class FilesystemRule(datatype('FSRule', ['product_type', 'subject_type']), Rule):
   def as_node(self, subject, product_type, variants):
     # TODO assert that product / subject types match
     return FilesystemNode(subject, product_type, variants)
@@ -462,13 +462,8 @@ class FilesystemNode(datatype('FilesystemNode', ['subject', 'product', 'variants
   @classmethod
   def as_intrinsic_rules(cls):
     """Returns a dict of tuple(sbj type, product type) -> list of rules for that subject product type tuple."""
-    return {(subject_type, product_type): [FSRule(product_type, subject_type)]
+    return {(subject_type, product_type): [FilesystemRule(product_type, subject_type)]
             for product_type, subject_type in cls._FS_PAIRS}
-
-  @classmethod
-  def is_filesystem_pair(cls, subject_type, product):
-    """True if the given subject type and product type should be computed using a FileystemNode."""
-    return (product, subject_type) in cls._FS_PAIRS
 
   @classmethod
   def generate_subjects(cls, filenames):

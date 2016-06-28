@@ -44,23 +44,26 @@ class Checkout(datatype('Checkout', ['path'])):
 
 
 class SnapshottedProcessRequest(datatype('SnapshottedProcessRequest',
-                                         ['args', 'snapshot_subjects'])):
+                                         ['args', 'snapshot_subjects', 'prep_fn'])):
   """Request for execution with binary args and snapshots to extract.
 
   args - Arguments to the binary being run.
   snapshot_subjects - Subjects for requesting snapshots that will be checked out into the work dir
                       for the process.
+  prep_fn - escape hatch for manipulating the work dir.
+
+            TODO come up with a better scheme for preparing for execution that's transparent to the engine.
   """
 
-  def __new__(cls, args, snapshot_subjects=tuple(), **kwargs):
+  def __new__(cls, args, snapshot_subjects=tuple(), prep_fn=None, **kwargs):
     if not isinstance(args, tuple):
       args = tuple(args)
     if not isinstance(snapshot_subjects, tuple):
       snapshot_subjects = tuple(snapshot_subjects)
-    return super(SnapshottedProcessRequest, cls).__new__(cls, args, snapshot_subjects, **kwargs)
+    return super(SnapshottedProcessRequest, cls).__new__(cls, args, snapshot_subjects, prep_fn, **kwargs)
 
 
-class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['stdout', 'stderr'])):
+class SnapshottedProcessResult(datatype('SnapshottedProcessResult', ['stdout', 'stderr', 'exit_code'])):
   """Contains the stdout / stderr from executing a process."""
 
 
@@ -107,7 +110,7 @@ class ProcessExecutionNode(datatype('ProcessNode', ['binary', 'process_request',
     logger.debug('Done running command in {}'.format(self.checkout.path))
 
     return Return(
-      SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read())
+      SnapshottedProcessResult(popen.stdout.read(), popen.stderr.read(), popen.returncode)
     )
 
 
@@ -127,6 +130,7 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode',
   def step(self, step_context):
     # Create the request from the request callback.
     task_state = step_context.get(self._request_task_node())
+
     if type(task_state) in (Waiting, Throw):
       return task_state
     elif type(task_state) is Noop:
@@ -166,6 +170,8 @@ class ProcessOrchestrationNode(datatype('ProcessOrchestrationNode',
         elif type(ss_state) in (Waiting, Throw, Noop):
           return ss_state
       # All of the snapshots have been checked out now.
+      if process_request.prep_fn:
+        process_request.prep_fn(checkout)
     else:
       # If there are no things to snapshot, then do no snapshotting or checking out and just use the
       # project dir.

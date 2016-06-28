@@ -61,6 +61,7 @@ python_tests(
     'src/python/pants/engine:fs',
     'src/python/pants/engine:isolated_process',
     'src/python/pants/engine:nodes',
+    'src/python/pants/util:dirutil',
     'tests/python/pants_test/testutils:git_util',
   ]
 )
