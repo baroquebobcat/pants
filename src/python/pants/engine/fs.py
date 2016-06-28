@@ -348,7 +348,7 @@ FilesContent = Collection.of(FileContent)
 FilesDigest = Collection.of(FileDigest)
 
 
-def create_fs_rules():
+def create_fs_tasks():
   """Creates rules that depend on consume the native filesystem Node type."""
   return [
     # Glob execution.

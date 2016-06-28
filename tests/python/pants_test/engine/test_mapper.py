@@ -16,7 +16,7 @@ from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddres
 from pants.build_graph.address import Address
 from pants.engine.addressable import SubclassesOf, addressable_list
 from pants.engine.engine import LocalSerialEngine
-from pants.engine.graph import UnhydratedStruct, create_graph_rules
+from pants.engine.graph import UnhydratedStruct, create_graph_tasks
 from pants.engine.mapper import (AddressFamily, AddressMap, AddressMapper, DifferingFamiliesError,
                                  DuplicateNameError, ResolveError, UnaddressableObjectError)
 from pants.engine.nodes import Throw
@@ -163,7 +163,7 @@ class AddressMapperTest(unittest.TestCase, SchedulerTestBase):
     address_mapper = AddressMapper(symbol_table_cls=symbol_table_cls,
                                    parser_cls=JsonParser,
                                    build_pattern='*.BUILD.json')
-    tasks = create_graph_rules(address_mapper, symbol_table_cls)
+    tasks = create_graph_tasks(address_mapper, symbol_table_cls)
 
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples/mapper_test'))
     self.build_root = project_tree.build_root

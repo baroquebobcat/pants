@@ -242,7 +242,7 @@ def descendant_addresses_to_globs(address_mapper, descendant_addresses):
   return PathGlobs.create_from_specs(descendant_addresses.directory, [pattern, join('**', pattern)])
 
 
-def create_graph_rules(address_mapper, symbol_table_cls):
+def create_graph_tasks(address_mapper, symbol_table_cls):
   """Creates tasks used to parse Structs from BUILD files.
 
   :param address_mapper_key: The subject key for an AddressMapper instance.
