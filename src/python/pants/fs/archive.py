@@ -27,7 +27,7 @@ class Archiver(AbstractClass):
     raise NotImplementedError()
 
   @abstractmethod
-  def create(self, basedir, outdir, name, prefix=None, filter=None):
+  def create(self, basedir, outdir, name, prefix=None):
     """Creates an archive of all files found under basedir to a file at outdir of the given name.
 
     If prefix is specified, it should be prepended to all archive paths.
@@ -56,20 +56,14 @@ class TarArchiver(Archiver):
     self.mode = mode
     self.extension = extension
 
-  def create(self, basedir, outdir, name, prefix=None, filter=None):
+  def create(self, basedir, outdir, name, prefix=None):
     """
     :API: public
     """
-    if filter:
-      def tar_filter(tarinfo):
-        if tarinfo.name == '.' or filter(tarinfo.name):
-          return tarinfo
-    else:
-      tar_filter = None
     basedir = ensure_text(basedir)
     tarpath = os.path.join(outdir, '{}.{}'.format(ensure_text(name), self.extension))
     with open_tar(tarpath, self.mode, dereference=True, errorlevel=1) as tar:
-      tar.add(basedir, arcname=prefix or '.', filter=tar_filter)
+      tar.add(basedir, arcname=prefix or '.')
     return tarpath
 
 
@@ -111,11 +105,10 @@ class ZipArchiver(Archiver):
     self.compression = compression
     self.extension = extension
 
-  def create(self, basedir, outdir, name, prefix=None, filter=None):
+  def create(self, basedir, outdir, name, prefix=None):
     """
     :API: public
     """
-    # TODO use filter
     zippath = os.path.join(outdir, '{}.{}'.format(name, self.extension))
     with open_zip(zippath, 'w', compression=self.compression) as zip:
       # For symlinks, we want to archive the actual content of linked files but
