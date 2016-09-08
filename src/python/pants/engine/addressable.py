@@ -91,8 +91,25 @@ class Exactly(TypeConstraint):
 
   _variance_symbol = '='
 
+  def __init__(self, *types, **kwargs):
+    super(Exactly, self).__init__(*types)
+    self._desc = kwargs.pop('description', None)
+
   def satisfied_by(self, obj):
     return type(obj) in self._types
+
+  @property
+  def __name__(self):
+    return repr(self)
+
+  def __str__(self):
+    return self.__repr__()
+
+  def __repr__(self):
+    if self._desc:
+      return 'Exactly({})'.format(self._desc)
+    return '{variance_symbol}{constrained_type}'.format(variance_symbol=self._variance_symbol,
+      constrained_type=', '.join(t.__name__ for t in self._types))
 
 
 class SubclassesOf(TypeConstraint):
@@ -102,6 +119,10 @@ class SubclassesOf(TypeConstraint):
 
   def satisfied_by(self, obj):
     return issubclass(type(obj), self._types)
+
+  @property
+  def __name__(self):
+    return repr(self)
 
 
 class NotSerializableError(TypeError):

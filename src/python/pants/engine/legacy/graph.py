@@ -16,6 +16,7 @@ from pants.build_graph.address import Address
 from pants.build_graph.address_lookup_error import AddressLookupError
 from pants.build_graph.build_graph import BuildGraph
 from pants.build_graph.remote_sources import RemoteSources
+from pants.engine.addressable import Exactly, SubclassesOf
 from pants.engine.fs import Files, FilesDigest, PathGlobs
 from pants.engine.legacy.structs import BundleAdaptor, BundlesField, SourcesField, TargetAdaptor
 from pants.engine.nodes import Return, State, TaskNode, Throw
@@ -298,13 +299,16 @@ def hydrate_bundles(bundles_field, files_digest_list, excluded_files_list):
 
 def create_legacy_graph_tasks():
   """Create tasks to recursively parse the legacy graph."""
+  target_adaptor_constraint = TargetAdaptor
+  #target_adaptor_constraint = SubclassesOf(TargetAdaptor)
+  #target_adaptor_constraint = Exactly(*((TargetAdaptor,)+tuple(TargetAdaptor.__subclasses__())), description='target adaptors')
   return [
     # Recursively requests the dependencies and adapted fields of TargetAdaptors, which
     # will result in an eager, transitive graph walk.
     (LegacyTarget,
-     [Select(TargetAdaptor),
-      SelectDependencies(LegacyTarget, TargetAdaptor, 'dependencies', field_types=(Address,)),
-      SelectDependencies(HydratedField, TargetAdaptor, 'field_adaptors', field_types=(SourcesField, BundlesField, ))],
+     [Select(target_adaptor_constraint),
+      SelectDependencies(LegacyTarget, target_adaptor_constraint, 'dependencies', field_types=(Address,)),
+      SelectDependencies(HydratedField, target_adaptor_constraint, 'field_adaptors', field_types=(SourcesField, BundlesField, ))],
      reify_legacy_graph),
     (HydratedField,
      [Select(SourcesField),

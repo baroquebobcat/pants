@@ -5,14 +5,17 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
-import functools
 import logging
 from abc import abstractmethod, abstractproperty
 from collections import defaultdict
 
-from pants.engine.isolated_process import ProcessExecutionNode, SnapshotNode
+from twitter.common.collections import OrderedSet
+
+from pants.engine.addressable import Exactly, TypeConstraint
+from pants.engine.fs import Files, PathGlobs
+from pants.engine.isolated_process import ProcessExecutionNode, Snapshot, SnapshotNode
 from pants.engine.nodes import (DependenciesNode, FilesystemNode, ProjectionNode, SelectNode,
-                                TaskNode, collect_item_of_type)
+                                TaskNode)
 from pants.engine.objects import Closable
 from pants.engine.selectors import (Select, SelectDependencies, SelectLiteral, SelectProjection,
                                     SelectVariant)
@@ -26,6 +29,10 @@ class Rule(object):
   """Marker class for rules."""
 
   @abstractproperty
+  def input_selectors(self):
+    """collection of input selectors"""
+
+  @abstractproperty
   def output_product_type(self):
     """The product type produced by this rule."""
 
@@ -34,39 +41,27 @@ class Rule(object):
     """Constructs a ProductGraph node for this rule."""
 
 
-class CoercionRule(datatype('CoercionRule', ['requested_type', 'available_type']), Rule):
-  """Defines a task for converting from the available type to the requested type using the selection
-  rules from Select.
-
-  TODO: remove this by introducing union types as product types for tasks.
-  """
-
-  def __new__(cls, *args, **kwargs):
-    factory = super(CoercionRule, cls).__new__(cls, *args, **kwargs)
-    factory.input_selects = (Select(factory.available_type),)
-    factory.func = functools.partial(coerce_fn, factory.requested_type)
-    return factory
-
-  @property
-  def output_product_type(self):
-    return self.requested_type
-
-  def as_node(self, subject, variants):
-    return TaskNode(subject, variants, self.requested_type, self.func, self.input_selects)
-
-
-class TaskNodeFactory(datatype('TaskNodeFactory', ['input_selects', 'task_func', 'product_type']), Rule):
+class TaskNodeFactory(datatype('TaskNodeFactory',
+                               ['input_selectors', 'task_func', 'product_type', 'constraint']),
+                      Rule):
   """A set-friendly curried TaskNode constructor."""
 
   def as_node(self, subject, variants):
-    return TaskNode(subject, variants, self.product_type, self.task_func, self.input_selects)
+    return TaskNode(
+      subject,
+      variants,
+      self.product_type,
+      self.task_func,
+      self.input_selectors,
+      self.constraint
+    )
 
   @property
   def output_product_type(self):
     return self.product_type
 
   def __str__(self):
-    return '({}, {!r}, {})'.format(self.product_type.__name__, self.input_selects, self.task_func.__name__)
+    return '({}, {!r}, {})'.format(self.product_type.__name__, self.input_selectors, self.task_func.__name__)
 
 
 class RuleValidationResult(datatype('RuleValidationResult', ['rule', 'errors', 'warnings'])):
@@ -106,14 +101,14 @@ class RulesetValidator(object):
     intrinsics = self._node_builder._intrinsics
     serializable_tasks = self._node_builder._tasks
     root_subject_types = self._root_subject_types
-    task_and_intrinsic_product_types = set(serializable_tasks.keys())
-    task_and_intrinsic_product_types.update(product_type for _, product_type in intrinsics.keys())
+    task_and_intrinsic_product_types = self._flatten_type_constraints(serializable_tasks.keys())
+    task_and_intrinsic_product_types.update(product_type for _, product_type in self._flatten_type_constraints(intrinsics.keys()))
 
     projected_subject_types = set()
     dependency_subject_types = set()
     for rules_of_type_x in serializable_tasks.values():
       for rule in rules_of_type_x:
-        for select in rule.input_selects:
+        for select in rule.input_selectors:
           if type(select) is SelectProjection:
             projected_subject_types.add(select.projected_subject)
           elif type(select) is SelectDependencies:
@@ -133,8 +128,8 @@ class RulesetValidator(object):
         raise ValueError('no task for product used by goal "{}": {}'.format(goal, goal_product))
 
     validation_results = self._check_task_selectors(serializable_tasks, type_collections)
-    results_with_warnings = [r for r in validation_results if r.has_warnings()]
-    results_with_errors = [r for r in validation_results if r.has_errors()]
+    results_with_warnings = [r for r in validation_results.values() if r.has_warnings()]
+    results_with_errors = [r for r in validation_results.values() if r.has_errors()]
 
     if results_with_warnings:
       warning_listing = '\n  '.join('{}\n    {}'.format(result.rule, '\n    '.join(result.warnings))
@@ -150,12 +145,12 @@ class RulesetValidator(object):
       raise ValueError(error_message)
 
   def _check_task_selectors(self, serializable_tasks, type_collections):
-    validation_results = []
+    validation_results = {}
     for rules_of_type_x in serializable_tasks.values():
       for rule in rules_of_type_x:
         rule_errors = []
         rule_warnings = []
-        for select in rule.input_selects:
+        for select in rule.input_selectors:
           if type(select) is Select:
             selection_products = [select.product]
           elif type(select) is SelectDependencies:
@@ -167,8 +162,11 @@ class RulesetValidator(object):
           else:
             selection_products = []
 
+          selection_products = self._flatten_type_constraints(selection_products)
+
           for selection_product in selection_products:
-            err_msg, warn_msg = self._validate_product_is_provided(select,
+            err_msg, warn_msg = self._validate_product_is_provided(rule,
+                                                                   select,
                                                                    selection_product,
                                                                    type_collections)
             if err_msg:
@@ -177,10 +175,16 @@ class RulesetValidator(object):
               rule_warnings.append(warn_msg)
         result = RuleValidationResult(rule, rule_errors, rule_warnings)
         if not result.valid():
-          validation_results.append(result)
+          if result.rule in validation_results:
+            if result == validation_results[result.rule]:
+              pass
+            else:
+              raise Exception('wut')
+          else:
+            validation_results[result.rule] = result
     return validation_results
 
-  def _validate_product_is_provided(self, select, selection_product_type, type_collections_by_name):
+  def _validate_product_is_provided(self, rule, select, selection_product_type, type_collections_by_name):
     if any(selection_product_type in types_in_collection
            for types_in_collection in type_collections_by_name.values()):
       return None, None
@@ -211,12 +215,13 @@ class RulesetValidator(object):
           warn_msg += ' has subtyped {}: {}'.format(name, sub_types_by_name[name])
       return None, warn_msg
 
-
-def coerce_fn(klass, obj):
-  """Returns the passed object iff it is of the type klass, or returns a  product of the object if
-  it has products of the right type.
-  """
-  return collect_item_of_type(klass, obj, None)
+  def _flatten_type_constraints(self, selection_products):
+    type_constraints = filter(lambda o: isinstance(o, TypeConstraint), selection_products)
+    non_type_constraints = filter(lambda o: not isinstance(o, TypeConstraint), selection_products)
+    flattened_products = OrderedSet(non_type_constraints)
+    for t in type_constraints:
+      flattened_products.update(t.types)
+    return flattened_products
 
 
 class NodeBuilder(Closable):
@@ -225,41 +230,62 @@ class NodeBuilder(Closable):
   @classmethod
   def create(cls, task_entries):
     """Creates a NodeBuilder with tasks indexed by their output type."""
-    serializable_tasks = defaultdict(set)
+    # NB make tasks ordered so that gen ordering is deterministic
+    serializable_tasks = defaultdict(OrderedSet)
     for entry in task_entries:
       if isinstance(entry, Rule):
         serializable_tasks[entry.output_product_type].add(entry)
       elif isinstance(entry, (tuple, list)) and len(entry) == 3:
-        output_type, input_selects, task = entry
-        serializable_tasks[output_type].add(TaskNodeFactory(tuple(input_selects),
-                                                            task,
-                                                            output_type))
+        output_type, input_selectors, task = entry
+        if isinstance(output_type, TypeConstraint):
+          constraint = output_type
+        else:
+          constraint = Exactly(output_type)
+        factory = TaskNodeFactory(tuple(input_selectors), task, output_type, constraint)
+        if type(constraint) is Exactly:
+          for kind in constraint.types:
+            serializable_tasks[kind].add(factory)
+          serializable_tasks[constraint].add(factory)
+        else:
+          raise ValueError('cant handle non exact constraints')
+          # TODO could add a spill collection of factories that check satisfiability of their types
+          # individually
+          #serializable_tasks[None].add(factory)
+          #serializable_tasks[output_type].add(
+          #  TaskNodeFactory(tuple(input_selectors), task, output_type)
+          #)
       else:
         raise TypeError("Unexpected rule type: {}."
                         " Rules either extend Rule, or are 3 elem tuples.".format(type(entry)))
 
     intrinsics = dict()
-    intrinsics.update(FilesystemNode.as_intrinsics())
-    intrinsics.update(SnapshotNode.as_intrinsics())
+    intrinsics.update(FilesystemIntrinsicRule.as_intrinsics())
+    intrinsics.update(SnapshotIntrinsicRule.as_intrinsics())
     return cls(serializable_tasks, intrinsics)
 
   def __init__(self, tasks, intrinsics):
     self._tasks = tasks
     self._intrinsics = intrinsics
 
-  def gen_nodes(self, subject, product_type, variants):
+  def gen_rules(self, subject, product_type):
     # Intrinsics that provide the requested product for the current subject type.
     intrinsic_node_factory = self._lookup_intrinsic(product_type, subject)
     if intrinsic_node_factory:
-      yield intrinsic_node_factory(subject, product_type, variants)
+      yield intrinsic_node_factory
     else:
       # Tasks that provide the requested product.
       for node_factory in self._lookup_tasks(product_type):
-        yield node_factory(subject, variants)
+        yield node_factory
+
+  def gen_nodes(self, subject, product_type, variants):
+    for rule in self.gen_rules(subject, product_type):
+      yield rule.as_node(subject, variants)
 
   def _lookup_tasks(self, product_type):
+    if isinstance(product_type, TypeConstraint) and type(product_type) is not Exactly:
+      raise ValueError('cantdeal with type {}'.format(product_type))
     for entry in self._tasks[product_type]:
-      yield entry.as_node
+      yield entry
 
   def _lookup_intrinsic(self, product_type, subject):
     return self._intrinsics.get((type(subject), product_type))
@@ -300,6 +326,39 @@ class SnapshottedProcess(datatype('SnapshottedProcess', ['product_type',
   def output_product_type(self):
     return self.product_type
 
+
+class FilesystemIntrinsicRule(datatype('FSNodeFactory', ['subject_type', 'product_type']), Rule):
+
+  @classmethod
+  def as_intrinsics(cls):
+    """Returns a dict of tuple(sbj type, product type) -> functions returning a fs node for that subject product type tuple."""
+    return {(subject_type, product_type): FilesystemIntrinsicRule(subject_type, product_type)
+      for product_type, subject_type in FilesystemNode._FS_PAIRS}
+
+  def as_node(self, subject, variants):
+    assert type(subject) is self.subject_type
+    return FilesystemNode.create(subject, self.product_type, variants)
+
   @property
-  def input_selects(self):
-    return self.input_selectors
+  def input_selectors(self):
+    return tuple()
+
+  @property
+  def output_product_type(self):
+    return self.product_type
+
+
+class SnapshotIntrinsicRule(Rule):
+  output_product_type = Snapshot
+  input_selectors = (Select(Files),)
+
+  def as_node(self, subject, variants):
+    assert type(subject) in (Files, PathGlobs)
+    return SnapshotNode.create(subject, variants)
+
+  @classmethod
+  def as_intrinsics(cls):
+    snapshot_intrinsic_rule = cls()
+    return {(Files, Snapshot): snapshot_intrinsic_rule,
+      (PathGlobs, Snapshot): snapshot_intrinsic_rule
+    }

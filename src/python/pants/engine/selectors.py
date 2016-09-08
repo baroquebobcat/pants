@@ -10,6 +10,7 @@ from abc import abstractproperty
 
 import six
 
+from pants.engine.addressable import Exactly, TypeConstraint
 from pants.util.memo import memoized
 from pants.util.meta import AbstractClass
 from pants.util.objects import datatype
@@ -19,6 +20,17 @@ class Selector(AbstractClass):
   @abstractproperty
   def optional(self):
     """Return true if this Selector is optional. It may result in a `None` match."""
+
+  @abstractproperty
+  def product(self):
+    """The product that this selector produces."""
+
+  @property
+  def type_constraint(self):
+    if isinstance(self.product, TypeConstraint):
+      return self.product
+    else:
+      return Exactly(self.product)
 
 
 class Select(datatype('Select', ['product', 'optional']), Selector):

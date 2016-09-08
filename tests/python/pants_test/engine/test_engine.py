@@ -30,10 +30,22 @@ class EngineTest(unittest.TestCase):
                                         subjects=addresses)
 
   def assert_engine(self, engine):
-    result = engine.execute(self.request(['compile'], self.java))
-    self.assertEqual({SelectNode(self.java, None, Select(Classpath)):
-                      Return(Classpath(creator='javac'))},
-                     result.root_products)
+    request = self.request(['compile'], self.java)
+    result = engine.execute(request)
+    select_classpath_gets_classpath = {SelectNode(self.java, None, Select(Classpath)): Return(Classpath(creator='javac'))}
+    if result.root_products != select_classpath_gets_classpath:
+      #first_root_node = result.root_products.keys().__iter__().next()
+      root, state = self.scheduler.root_entries(request).items()[0]
+      self.fail(
+        'roots failed to have the right thing. First root: {} Product graph: {} len {} Trace:\n{}'.format(
+#first_root_node,
+          root,
+          self.scheduler.product_graph,
+          len(self.scheduler.product_graph),
+        '\n'.join(self.scheduler.product_graph.trace(root, include_noops=True, print_bottoms=True))))
+     #   '\n'.join(self.scheduler.product_graph.trace(first_root_node))))
+    self.assertEqual(select_classpath_gets_classpath,
+      result.root_products)
     self.assertIsNone(result.error)
 
   @contextmanager

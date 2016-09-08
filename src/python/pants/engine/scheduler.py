@@ -8,15 +8,17 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import logging
 import threading
 import time
-from collections import deque
+from collections import defaultdict, deque
 from contextlib import contextmanager
+
+from twitter.common.collections import OrderedSet
 
 from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddress
 from pants.build_graph.address import Address
-from pants.engine.addressable import Addresses
+from pants.engine.addressable import Addresses, Exactly
 from pants.engine.fs import PathGlobs
-from pants.engine.nodes import (FilesystemNode, Node, Noop, Return, Runnable, SelectNode,
-                                StepContext, TaskNode, Throw, Waiting)
+from pants.engine.nodes import (DependenciesNode, FilesystemNode, Node, Noop, ProjectionNode,
+                                Return, Runnable, SelectNode, StepContext, TaskNode, Throw, Waiting)
 from pants.engine.rules import NodeBuilder, RulesetValidator
 from pants.engine.selectors import Select, SelectDependencies
 from pants.util.objects import datatype
@@ -48,12 +50,12 @@ class ProductGraph(object):
       # The computed value for a Node: if a Node hasn't been computed yet, it will be None.
       self.state = None
       # Sets of dependency/dependent Entry objects.
-      self.dependencies = set()
-      self.dependents = set()
+      self.dependencies = OrderedSet()
+      self.dependents = OrderedSet()
       # Illegal/cyclic dependency Nodes. We prevent cyclic dependencies from being introduced into the
       # dependencies/dependents lists themselves, but track them independently in order to provide
       # context specific error messages when they are introduced.
-      self.cyclic_dependencies = set()
+      self.cyclic_dependencies = OrderedSet()
 
     @property
     def is_complete(self):
@@ -286,7 +288,7 @@ class ProductGraph(object):
 
       yield entry
 
-  def trace(self, root):
+  def trace(self, root, include_noops=False, print_bottoms=False):
     """Yields a stringified 'stacktrace' starting from the given failed root.
 
     TODO: This could use polish. In particular, the `__str__` representations of Nodes and
@@ -294,32 +296,51 @@ class ProductGraph(object):
     """
 
     traced = set()
-
+    if include_noops:
+      bottom_state_types = (Return,)
+    else:
+      bottom_state_types = (Noop, Return)
     def is_bottom(entry):
-      return type(entry.state) in (Noop, Return) or entry in traced
+      return type(entry.state) in bottom_state_types or entry in traced
 
     def is_one_level_above_bottom(parent_entry):
       return all(is_bottom(child_entry) for child_entry in parent_entry.dependencies)
 
     def _format(level, entry, state):
       output = '{}Computing {} for {}'.format('  ' * level,
-                                              entry.node.product.__name__,
-                                              entry.node.subject)
+        entry.node.product.__name__,
+        entry.node.subject)
+
+      if isinstance(entry.node, TaskNode):
+        output += ' with {}'.format(entry.node.func.__name__)
+      elif isinstance(entry.node, (SelectNode, DependenciesNode, ProjectionNode)):
+        output = output.replace('Computing', 'Selecting')
+        output += ' with selector {}'.format(entry.node.selector)
+      else:
+        output += ' other node type {}'.format(type(entry.node).__name__)
       if is_one_level_above_bottom(entry):
         output += '\n{}{}'.format('  ' * (level + 1), state)
-
       return output
 
     def _trace(entry, level):
       if is_bottom(entry):
+        if print_bottoms:
+          yield _format(level, entry, entry.state)
         return
       traced.add(entry)
       yield _format(level, entry, entry.state)
-      for dep in entry.cyclic_dependencies:
-        yield _format(level, entry, Noop.cycle(entry.node, dep))
-      for dep_entry in entry.dependencies:
-        for l in _trace(dep_entry, level+1):
-          yield l
+      indent = '  ' * level
+      if entry.cyclic_dependencies:
+        yield indent + '::cyclicdeps: {}'.format(entry.node)
+        for dep in entry.cyclic_dependencies:
+          yield _format(level, entry, Noop.cycle(entry.node, dep))
+        yield indent + '/::cyclicdeps:: {}'.format(entry.node)
+      if entry.dependencies:
+        yield indent + '::deps:: {}'.format(entry.node)
+        for dep_entry in entry.dependencies:
+          for l in _trace(dep_entry, level+1):
+            yield l
+        yield indent + '/::deps:: {}'.format(entry.node)
 
     for line in _trace(self._nodes[root], 1):
       yield line
@@ -432,7 +453,7 @@ class LocalScheduler(object):
     self._inline_nodes = inline_nodes
 
     select_product = lambda product: Select(product)
-    select_dep_addrs = lambda product: SelectDependencies(product, Addresses, field_types=(Address,))
+    select_dep_addrs = lambda product: SelectDependencies(product, Exactly(Addresses), field_types=(Address,))
     self._root_selector_fns = {
       Address: select_product,
       PathGlobs: select_product,
@@ -619,14 +640,23 @@ class LocalScheduler(object):
           self._product_graph.complete_node(node_entry.node, state)
           candidates.extend(d for d in node_entry.dependents)
 
+      state_ctr = defaultdict(lambda : 0)
+      for entry in self._product_graph._nodes.values():
+        state_ctr[entry.state.__class__.__name__]+=1
+      type_cter = defaultdict(lambda : 0)
+      for entry in self._product_graph._nodes.values():
+        type_cter[entry.node.__class__.__name__]+=1
+
       logger.debug(
         'ran %s scheduling iterations, %s runnables, and %s steps in %f seconds. '
-        'there are %s total nodes.',
+        'there are %s total nodes. state cts: %r, node type cts: %r',
         scheduling_iterations,
         runnable_count,
         step_count,
         time.time() - start_time,
-        len(self._product_graph)
+        len(self._product_graph),
+        state_ctr,
+        type_cter
       )
 
       if self._graph_validator is not None:
