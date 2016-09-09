@@ -11,7 +11,7 @@ import unittest
 
 from pants.base.cmd_line_spec_parser import CmdLineSpecParser
 from pants.build_graph.address import Address
-from pants.engine.addressable import Addresses
+from pants.engine.addressable import Addresses, Exactly
 from pants.engine.engine import LocalSerialEngine
 from pants.engine.nodes import (ConflictingProducersError, DependenciesNode, Return, SelectNode,
                                 Throw, Waiting)
@@ -235,7 +235,7 @@ class SchedulerTest(unittest.TestCase):
     root_value = root_state.value
     self.assertEqual(DependenciesNode(spec,
                                       None,
-                                      SelectDependencies(Address, Addresses, field_types=(Address,))),
+                                      SelectDependencies(Address, Exactly(Addresses), field_types=(Address,))),
                      root)
     self.assertEqual(list, type(root_value))
 
@@ -255,7 +255,7 @@ class SchedulerTest(unittest.TestCase):
     root_value = root_state.value
     self.assertEqual(DependenciesNode(spec,
                                       None,
-                                      SelectDependencies(Address, Addresses, field_types=(Address,))),
+                                      SelectDependencies(Address, Exactly(Addresses), field_types=(Address,))),
                      root)
     self.assertEqual(list, type(root_value))
 

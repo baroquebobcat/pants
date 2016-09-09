@@ -7,6 +7,9 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 from abc import abstractmethod
 
+from twitter.common.collections import OrderedSet
+
+from pants.engine.addressable import Exactly
 from pants.util.meta import AbstractClass
 
 
@@ -25,6 +28,13 @@ class SymbolTable(AbstractClass):
   @abstractmethod
   def table(cls):
     """Returns a dict of name to implementation class."""
+
+  @classmethod
+  def constraint(cls):
+    """Returns the typeconstraint for the symbol table"""
+    # TODO, maybe this should be a sorted set, i think ordered set doesn't do what I'm hoping for.
+    symboltable_types = OrderedSet(cls.table().values())
+    return Exactly(*symboltable_types, description='symbol table types')
 
 
 class Parser(AbstractClass):

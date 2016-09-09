@@ -297,11 +297,9 @@ def hydrate_bundles(bundles_field, files_digest_list, excluded_files_list):
   return HydratedField('bundles', bundles)
 
 
-def create_legacy_graph_tasks():
+def create_legacy_graph_tasks(symbol_table_cls):
   """Create tasks to recursively parse the legacy graph."""
-  target_adaptor_constraint = TargetAdaptor
-  #target_adaptor_constraint = SubclassesOf(TargetAdaptor)
-  #target_adaptor_constraint = Exactly(*((TargetAdaptor,)+tuple(TargetAdaptor.__subclasses__())), description='target adaptors')
+  target_adaptor_constraint = symbol_table_cls.constraint()
   return [
     # Recursively requests the dependencies and adapted fields of TargetAdaptors, which
     # will result in an eager, transitive graph walk.

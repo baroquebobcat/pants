@@ -55,45 +55,19 @@ def _satisfied_by(t, o):
 
 
 def _def_satisfiedby_honest(obj, t, o):
-  #if o is None:
-  #  return True
-  #print('gothere')
-  if t.satisfied_by(o):
+  if type(o) is t:
     return True
-
-  elif isinstance(t, Exactly):
-    if isinstance(o, t.types):
-      print('WARN: needs Subclass node:{} constraint:{} passed:{}'.format(obj, t, type(o)))
-      return False
-    else:
-      #print('gothere')
-      return False
-  elif isinstance(t, type):
-    print('WARN: a type got through to a type check, oh noes {}'.format(t))
-  else:
-    #print('doesn't even match at all')
+  if isinstance(o, t):
+    print('WARN: needs Subclass node:{} constraint:{} passed:{}'.format(obj, t, type(o)))
     return False
-    #return isinstance(o, t._types)
+  return False
 
 
 def _create_typecheck(obj, product_type):
-  Exactly
-  #if type(product_type) is Exactly:
-  #  # tset = set(obj.selector.product.types)
-  #  tset = product_type.types
-  #  obj._typecheck = functools.partial(_setcheck, tset)
-  #el
   if isinstance(product_type, TypeConstraint):
     return functools.partial(_satisfied_by, product_type)
   elif product_type:
-    #return functools.partial(_satisfied_by, Exactly(product_type))
-    # if isinstance(obj.selector.product, TypeConstraint):
-    #  obj._type_constraint = obj.selector.product
-    # else:
-    # obj._type_constraint = SubclassesOf(obj.selector.product)
-    # obj._typecheck =obj._type_constraint.satisfied_by
-    return functools.partial(_instancecheck, product_type)
-    return functools.partial(_def_satisfiedby_honest, obj, Exactly(product_type))
+    return functools.partial(_def_satisfiedby_honest, obj, product_type)
   else:
     raise Exception("WHATHT")
 
@@ -359,8 +333,10 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
     dependencies = []
     matches = []
     nodes = tuple(step_context.gen_nodes(self.subject, self.product, variants))
+    dep_states = []
     for dep in nodes:
       dep_state = step_context.get(dep)
+      dep_states.append(dep_state)
       if type(dep_state) is Waiting:
         dependencies.extend(dep_state.dependencies)
       elif type(dep_state) is Return:
@@ -380,7 +356,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
     if dependencies:
       return Waiting(dependencies)
     elif len(matches) == 0:
-      return Noop('No source of {}. Found {} possible sources tho {}', self, len(nodes), nodes)
+      return Noop('No source of {}. Found {} possible sources tho {}. states: {}', self, len(nodes), nodes, dep_states)
     elif len(matches) > 1:
       # TODO: Multiple successful tasks are not currently supported. We should allow for this
       # by adding support for "mergeable" products. see:
@@ -429,7 +405,8 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
 
   def step(self, step_context):
     # Request the product we need in order to request dependencies.
-    dep_product_node = step_context.select_node(Select(self.dep_product), self.subject, self.variants)
+    selector = Select(self.dep_product)
+    dep_product_node = step_context.select_node(selector, self.subject, self.variants)
     dep_product_state = step_context.get(dep_product_node)
     if type(dep_product_state) in (Throw, Waiting):
       return dep_product_state

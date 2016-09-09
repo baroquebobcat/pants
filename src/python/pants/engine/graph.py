@@ -10,12 +10,11 @@ from fnmatch import fnmatch
 from os.path import basename, dirname, join
 
 import six
-from twitter.common.collections import OrderedSet
 
 from pants.base.project_tree import Dir, File
 from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddress
 from pants.build_graph.address import Address
-from pants.engine.addressable import AddressableDescriptor, Addresses, Exactly, TypeConstraintError
+from pants.engine.addressable import AddressableDescriptor, Addresses, TypeConstraintError
 from pants.engine.fs import DirectoryListing, Files, FilesContent, Path, PathGlobs
 from pants.engine.mapper import AddressFamily, AddressMap, AddressMapper, ResolveError
 from pants.engine.objects import Locatable, SerializableFactory, Validatable
@@ -254,8 +253,7 @@ def create_graph_tasks(address_mapper, symbol_table_cls):
   :param address_mapper_key: The subject key for an AddressMapper instance.
   :param symbol_table_cls: A SymbolTable class to provide symbols for Address lookups.
   """
-  symboltable_types = OrderedSet(symbol_table_cls.table().values())
-  symboltableconstraint = Exactly(*symboltable_types, description='symbol table types')
+  symboltableconstraint =  symbol_table_cls.constraint()
   return [
     # Support for resolving Structs from Addresses
     (symboltableconstraint,
