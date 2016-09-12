@@ -25,8 +25,7 @@ class Selector(AbstractClass):
   def product(self):
     """The product that this selector produces."""
 
-  @property
-  def type_constraint(self):
+  def type_constraint(self, o):
     if isinstance(self.product, TypeConstraint):
       return self.product
     else:
@@ -40,7 +39,12 @@ class Select(datatype('Select', ['product', 'optional']), Selector):
   """
 
   def __new__(cls, product, optional=False):
-    return super(Select, cls).__new__(cls, product, optional)
+    obj = super(Select, cls).__new__(cls, product, optional)
+    if isinstance(product, TypeConstraint):
+      obj.type_constraint = product
+    else:
+      obj.type_constraint = Exactly(product)
+    return obj
 
   def __repr__(self):
     return '{}({}{})'.format(type(self).__name__,
@@ -60,7 +64,12 @@ class SelectVariant(datatype('Variant', ['product', 'variant_key']), Selector):
   def __new__(cls, product, variant_key):
     if not isinstance(variant_key, six.string_types):
       raise ValueError('Expected variant_key to be a string, but was {!r}'.format(variant_key))
-    return super(SelectVariant, cls).__new__(cls, product, variant_key)
+    obj = super(SelectVariant, cls).__new__(cls, product, variant_key)
+    if isinstance(product, TypeConstraint):
+      obj.type_constraint = product
+    else:
+      obj.type_constraint = Exactly(product)
+    return obj
 
   def __repr__(self):
     return '{}({}, {})'.format(type(self).__name__,
@@ -82,7 +91,15 @@ class SelectDependencies(datatype('Dependencies',
   """
 
   def __new__(cls, product, dep_product, field=None, field_types=tuple()):
-    return super(SelectDependencies, cls).__new__(cls, product, dep_product, field, field_types)
+    obj = super(SelectDependencies, cls).__new__(cls, product, dep_product, field, field_types)
+    if isinstance(product, TypeConstraint):
+      obj.type_constraint = product
+    else:
+      obj.type_constraint = Exactly(product)
+
+    obj.dep_product_selector = Select(dep_product)
+    obj.final_product_selector = Select(product)
+    return obj
 
   optional = False
 
@@ -109,6 +126,18 @@ class SelectProjection(datatype('Projection', ['product', 'projected_subject', '
   """
   optional = False
 
+  def __new__(cls, product, projected_subject, fields, input_product):
+    obj = super(SelectProjection, cls).__new__(cls, product, projected_subject, fields,
+      input_product)
+    if isinstance(product, TypeConstraint):
+      obj.type_constraint = product
+    else:
+      obj.type_constraint = Exactly(product)
+
+    obj.input_product_selector = Select(input_product)
+    obj.final_product_selector = Select(product)
+    return obj
+
   def __repr__(self):
     return '{}({}, {}, {}, {})'.format(type(self).__name__,
                              self.product.__name__,
@@ -120,6 +149,14 @@ class SelectProjection(datatype('Projection', ['product', 'projected_subject', '
 class SelectLiteral(datatype('Literal', ['subject', 'product']), Selector):
   """Selects a literal Subject (other than the one applied to the selector)."""
   optional = False
+
+  def __new__(cls, subject, product):
+    obj = super(SelectLiteral, cls).__new__(cls, subject, product)
+    if isinstance(product, TypeConstraint):
+      obj.type_constraint = product
+    else:
+      obj.type_constraint = Exactly(product)
+    return obj
 
   def __repr__(self):
     return '{}({}, {})'.format(type(self).__name__, repr(self.subject), self.product.__name__)

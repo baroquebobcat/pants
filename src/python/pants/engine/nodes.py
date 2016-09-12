@@ -15,7 +15,7 @@ from twitter.common.collections import OrderedSet
 
 from pants.base.project_tree import Dir, File, Link
 from pants.build_graph.address import Address
-from pants.engine.addressable import Exactly, TypeConstraint, parse_variants
+from pants.engine.addressable import parse_variants
 from pants.engine.fs import (DirectoryListing, FileContent, FileDigest, ReadLink, file_content,
                              file_digest, read_link, scan_directory)
 from pants.engine.selectors import Select, SelectVariant
@@ -27,49 +27,12 @@ from pants.util.objects import datatype
 logger = logging.getLogger(__name__)
 
 
-def _setcheck(tset, o):
-  # TODO, should only do for optional checks?
-  #if o is None:
-  #  return True
-
-  return type(o) in tset
-
-
-def _instancecheck(t, o):
-  # TODO, should only do for optional checks?
-  #if o is None:
-  #  return True
-
-  try:
-    return isinstance(o, t)
-  except Exception:
-    raise ValueError('expected t to  be a type or tuple {!r}'.format(t))
-
-
 def _satisfied_by(t, o):
   """Here for pickleability"""
   #if o is None:
   #  return True
 
   return t.satisfied_by(o)
-
-
-def _def_satisfiedby_honest(obj, t, o):
-  if type(o) is t:
-    return True
-  if isinstance(o, t):
-    print('WARN: needs Subclass node:{} constraint:{} passed:{}'.format(obj, t, type(o)))
-    return False
-  return False
-
-
-def _create_typecheck(obj, product_type):
-  if isinstance(product_type, TypeConstraint):
-    return functools.partial(_satisfied_by, product_type)
-  elif product_type:
-    return functools.partial(_def_satisfiedby_honest, obj, product_type)
-  else:
-    raise Exception("WHATHT")
 
 
 def collect_item_of_type(typecheck, candidate, variant_value):
@@ -88,7 +51,6 @@ def collect_item_of_type(typecheck, candidate, variant_value):
   # TODO: returning only the first literal configuration of a given type/variant. Need to
   # define mergeability for products.
   for item in items():
-
     if not typecheck(item):
       continue
     if variant_value and not getattr(item, 'name', None) == variant_value:
@@ -273,13 +235,10 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
   """
   is_cacheable = False
   is_inlineable = True
+  _select_variants_selector = Select(Variants)
 
-  def __new__(cls, *args, **kwargs):
-    obj = super(SelectNode, cls).__new__(cls, *args, **kwargs)
-
-    obj._typecheck = _create_typecheck(obj, obj.selector.product)
-
-    return obj
+  def _typecheck(self, o):
+    return self.selector.type_constraint.satisfied_by(o)
 
   @property
   def variant_key(self):
@@ -304,7 +263,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
     # them to task nodes.
     variants = self.variants
     if type(self.subject) is Address and self.product is not Variants:
-      variants_node = step_context.select_node(Select(Variants), self.subject, self.variants)
+      variants_node = step_context.select_node(self._select_variants_selector, self.subject, self.variants)
       dep_state = step_context.get(variants_node)
       if type(dep_state) is Waiting:
         return dep_state
@@ -401,11 +360,11 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
         # If a subject has literal variants for particular dependencies, they win over all else.
         dependency, literal_variants = parse_variants(dependency)
         variants = Variants.merge(variants, literal_variants)
-      yield step_context.select_node(Select(self.product), subject=dependency, variants=variants)
+      yield step_context.select_node(self.selector.final_product_selector, subject=dependency, variants=variants)
 
   def step(self, step_context):
     # Request the product we need in order to request dependencies.
-    selector = Select(self.dep_product)
+    selector = self.selector.dep_product_selector
     dep_product_node = step_context.select_node(selector, self.subject, self.variants)
     dep_product_state = step_context.get(dep_product_node)
     if type(dep_product_state) in (Throw, Waiting):
@@ -466,7 +425,9 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'variants', 'selecto
 
   def step(self, step_context):
     # Request the product we need to compute the subject.
-    input_node = step_context.select_node(Select(self.input_product), self.subject, self.variants)
+    input_node = step_context.select_node(self.selector.input_product_selector,
+                                          self.subject,
+                                          self.variants)
 
     input_state = step_context.get(input_node)
     if type(input_state) in (Throw, Waiting):
@@ -492,7 +453,9 @@ class ProjectionNode(datatype('ProjectionNode', ['subject', 'variants', 'selecto
           self.projected_subject, e)))
 
     # When the output node is available, return its result.
-    output_node = step_context.select_node(Select(self.product), projected_subject, self.variants)
+    output_node = step_context.select_node(self.selector.final_product_selector,
+                                           projected_subject,
+                                           self.variants)
     output_state = step_context.get(output_node)
     if type(output_state) in (Return, Throw, Waiting):
       return output_state
@@ -511,9 +474,7 @@ def _run_func_and_check_type(product_type, type_check, func, *args):
                      .format(func.__name__, product_type, type(result).__name__))
 
 
-class TaskNode(datatype('TaskNode',
-                        ['subject', 'variants', 'product', 'func', 'clause', 'product_constraint']),
-               Node):
+class TaskNode(datatype('TaskNode', ['subject', 'variants', 'rule']), Node):
   """A Node representing execution of a non-blocking python function.
 
   All dependencies of the function are declared ahead of time in the dependency `clause` of the
@@ -524,16 +485,19 @@ class TaskNode(datatype('TaskNode',
   is_cacheable = True
   is_inlineable = False
 
-  def __new__(cls, *args, **kwargs):
-    obj = super(TaskNode, cls).__new__(cls, *args, **kwargs)
-    obj._typecheck = _create_typecheck(obj, obj.product_constraint)
-    return obj
+  @property
+  def product(self):
+    return self.rule.output_product_type
+
+  @property
+  def func(self):
+    return self.rule.task_func
 
   def step(self, step_context):
     # Compute dependencies for the Node, or determine whether it is a Noop.
     dependencies = []
     dep_values = []
-    for index, selector in enumerate(self.clause):
+    for index, selector in enumerate(self.rule.input_selectors):
       dep_node = step_context.select_node(selector, self.subject, self.variants)
       dep_state = step_context.get(dep_node)
       if type(dep_state) is Waiting:
@@ -555,14 +519,14 @@ class TaskNode(datatype('TaskNode',
       return Waiting(dependencies)
     # Ready to run!
     return Runnable(functools.partial(_run_func_and_check_type,
-                                      self.product,
-                                      self._typecheck,
-                                      self.func),
+                                      self.rule.output_product_type,
+                                      functools.partial(_satisfied_by, self.rule.constraint),
+                                      self.rule.task_func),
                     tuple(dep_values))
 
   def __repr__(self):
-    return 'TaskNode(subject={}, product={}, variants={}, func={}, clause={}' \
-      .format(self.subject, self.product.__name__, self.variants, self.func.__name__, self.clause)
+    return 'TaskNode(subject={}, variants={}, rule={}' \
+      .format(self.subject, self.variants, self.rule)
 
   def __str__(self):
     return repr(self)

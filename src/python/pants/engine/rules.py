@@ -41,19 +41,15 @@ class Rule(object):
     """Constructs a ProductGraph node for this rule."""
 
 
-class TaskNodeFactory(datatype('TaskNodeFactory',
-                               ['input_selectors', 'task_func', 'product_type', 'constraint']),
-                      Rule):
-  """A set-friendly curried TaskNode constructor."""
+class TaskRule(datatype('TaskRule', ['input_selectors', 'task_func', 'product_type', 'constraint']),
+               Rule):
+  """A Rule that runs a task function when all of its input selectors are satisfied."""
 
   def as_node(self, subject, variants):
     return TaskNode(
       subject,
       variants,
-      self.product_type,
-      self.task_func,
-      self.input_selectors,
-      self.constraint
+      self
     )
 
   @property
@@ -241,7 +237,7 @@ class NodeBuilder(Closable):
           constraint = output_type
         else:
           constraint = Exactly(output_type)
-        factory = TaskNodeFactory(tuple(input_selectors), task, output_type, constraint)
+        factory = TaskRule(tuple(input_selectors), task, output_type, constraint)
         if type(constraint) is Exactly:
           for kind in constraint.types:
             serializable_tasks[kind].add(factory)
@@ -250,10 +246,6 @@ class NodeBuilder(Closable):
           raise ValueError('cant handle non exact constraints')
           # TODO could add a spill collection of factories that check satisfiability of their types
           # individually
-          #serializable_tasks[None].add(factory)
-          #serializable_tasks[output_type].add(
-          #  TaskNodeFactory(tuple(input_selectors), task, output_type)
-          #)
       else:
         raise TypeError("Unexpected rule type: {}."
                         " Rules either extend Rule, or are 3 elem tuples.".format(type(entry)))
@@ -274,16 +266,21 @@ class NodeBuilder(Closable):
       yield intrinsic_node_factory
     else:
       # Tasks that provide the requested product.
+      # TODO not sure seen bit here is necessary
+      seen = set()
       for node_factory in self._lookup_tasks(product_type):
-        yield node_factory
+        if node_factory not in seen:
+          seen.add(node_factory)
+          yield node_factory
 
   def gen_nodes(self, subject, product_type, variants):
     for rule in self.gen_rules(subject, product_type):
       yield rule.as_node(subject, variants)
 
   def _lookup_tasks(self, product_type):
-    if isinstance(product_type, TypeConstraint) and type(product_type) is not Exactly:
-      raise ValueError('cantdeal with type {}'.format(product_type))
+    # this here was the difference between 15sec runtime and 9.5 sec wow, or not :/
+    #if isinstance(product_type, TypeConstraint) and type(product_type) is not Exactly:
+    #  raise ValueError('cantdeal with type {}'.format(product_type))
     for entry in self._tasks[product_type]:
       yield entry
 
