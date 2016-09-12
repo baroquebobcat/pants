@@ -278,9 +278,6 @@ class NodeBuilder(Closable):
       yield rule.as_node(subject, variants)
 
   def _lookup_tasks(self, product_type):
-    # this here was the difference between 15sec runtime and 9.5 sec wow, or not :/
-    #if isinstance(product_type, TypeConstraint) and type(product_type) is not Exactly:
-    #  raise ValueError('cantdeal with type {}'.format(product_type))
     for entry in self._tasks[product_type]:
       yield entry
 
@@ -313,8 +310,9 @@ class SnapshottedProcess(datatype('SnapshottedProcess', ['product_type',
                                                          'binary_type',
                                                          'input_selectors',
                                                          'input_conversion',
-                                                         'output_conversion']), Rule):
-  """A task type for defining execution of snapshotted processes."""
+                                                         'output_conversion']),
+                         Rule):
+  """A rule type for defining execution of snapshotted processes."""
 
   def as_node(self, subject, variants):
     return ProcessExecutionNode(subject, variants, self)
@@ -324,7 +322,8 @@ class SnapshottedProcess(datatype('SnapshottedProcess', ['product_type',
     return self.product_type
 
 
-class FilesystemIntrinsicRule(datatype('FSNodeFactory', ['subject_type', 'product_type']), Rule):
+class FilesystemIntrinsicRule(datatype('FilesystemIntrinsicRule', ['subject_type', 'product_type']),
+                              Rule):
 
   @classmethod
   def as_intrinsics(cls):
@@ -356,6 +355,7 @@ class SnapshotIntrinsicRule(Rule):
   @classmethod
   def as_intrinsics(cls):
     snapshot_intrinsic_rule = cls()
-    return {(Files, Snapshot): snapshot_intrinsic_rule,
+    return {
+      (Files, Snapshot): snapshot_intrinsic_rule,
       (PathGlobs, Snapshot): snapshot_intrinsic_rule
     }

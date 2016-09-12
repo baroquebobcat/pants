@@ -29,9 +29,6 @@ logger = logging.getLogger(__name__)
 
 def _satisfied_by(t, o):
   """Here for pickleability"""
-  #if o is None:
-  #  return True
-
   return t.satisfied_by(o)
 
 
@@ -237,9 +234,6 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
   is_inlineable = True
   _select_variants_selector = Select(Variants)
 
-  def _typecheck(self, o):
-    return self.selector.type_constraint.satisfied_by(o)
-
   @property
   def variant_key(self):
     if isinstance(self.selector, SelectVariant):
@@ -256,7 +250,9 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
 
     Returns the resulting product value, or None if no match was made.
     """
-    return collect_item_of_type(self._typecheck, candidate, variant_value)
+    return collect_item_of_type(self.selector.type_constraint.satisfied_by,
+                                candidate,
+                                variant_value)
 
   def step(self, step_context):
     # Request default Variants for the subject, so that if there are any we can propagate
