@@ -32,30 +32,6 @@ def _satisfied_by(t, o):
   return t.satisfied_by(o)
 
 
-def collect_item_of_type(typecheck, candidate, variant_value):
-  """Looks for has-a or is-a relationships between the given value and the requested product.
-
-  Returns the resulting product value, or None if no match was made.
-  """
-  def items():
-    # Check whether the subject is-a instance of the product.
-    yield candidate
-    # Else, check whether it has-a instance of the product.
-    if isinstance(candidate, HasProducts):
-      for subject in candidate.products:
-        yield subject
-
-  # TODO: returning only the first literal configuration of a given type/variant. Need to
-  # define mergeability for products.
-  for item in items():
-    if not typecheck(item):
-      continue
-    if variant_value and not getattr(item, 'name', None) == variant_value:
-      continue
-    return item
-  return None
-
-
 class ConflictingProducersError(Exception):
   """Indicates that there was more than one source of a product for a given subject.
 
@@ -250,9 +226,23 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
 
     Returns the resulting product value, or None if no match was made.
     """
-    return collect_item_of_type(self.selector.type_constraint.satisfied_by,
-                                candidate,
-                                variant_value)
+    def items():
+      # Check whether the subject is-a instance of the product.
+      yield candidate
+      # Else, check whether it has-a instance of the product.
+      if isinstance(candidate, HasProducts):
+        for subject in candidate.products:
+          yield subject
+
+    # TODO: returning only the first literal configuration of a given type/variant. Need to
+    # define mergeability for products.
+    for item in items():
+      if not self.selector.type_constraint.satisfied_by(item):
+        continue
+      if variant_value and not getattr(item, 'name', None) == variant_value:
+        continue
+      return item
+    return None
 
   def step(self, step_context):
     # Request default Variants for the subject, so that if there are any we can propagate
