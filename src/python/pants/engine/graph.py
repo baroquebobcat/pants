@@ -253,13 +253,12 @@ def create_graph_tasks(address_mapper, symbol_table_cls):
   :param address_mapper_key: The subject key for an AddressMapper instance.
   :param symbol_table_cls: A SymbolTable class to provide symbols for Address lookups.
   """
-  symboltableconstraint =  symbol_table_cls.constraint()
+  symbol_table_constraint =  symbol_table_cls.constraint()
   return [
     # Support for resolving Structs from Addresses
-    (symboltableconstraint,
+    (symbol_table_constraint,
      [Select(UnhydratedStruct),
-      SelectDependencies(symboltableconstraint,
-        UnhydratedStruct, field_types=(Address,))],
+      SelectDependencies(symbol_table_constraint, UnhydratedStruct, field_types=(Address,))],
      hydrate_struct),
     (UnhydratedStruct,
      [SelectProjection(AddressFamily, Dir, ('spec_path',), Address),
