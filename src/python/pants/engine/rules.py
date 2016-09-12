@@ -266,12 +266,8 @@ class NodeBuilder(Closable):
       yield intrinsic_node_factory
     else:
       # Tasks that provide the requested product.
-      # TODO not sure seen bit here is necessary
-      seen = set()
       for node_factory in self._lookup_tasks(product_type):
-        if node_factory not in seen:
-          seen.add(node_factory)
-          yield node_factory
+        yield node_factory
 
   def gen_nodes(self, subject, product_type, variants):
     for rule in self.gen_rules(subject, product_type):

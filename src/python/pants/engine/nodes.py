@@ -311,7 +311,7 @@ class SelectNode(datatype('SelectNode', ['subject', 'variants', 'selector']), No
     if dependencies:
       return Waiting(dependencies)
     elif len(matches) == 0:
-      return Noop('No source of {}. Found {} possible sources tho {}. states: {}', self, len(nodes), nodes, dep_states)
+      return Noop('No source of {}.', self)
     elif len(matches) > 1:
       # TODO: Multiple successful tasks are not currently supported. We should allow for this
       # by adding support for "mergeable" products. see:
@@ -383,7 +383,7 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
       elif type(dep_state) is Return:
         dep_values.append(dep_state.value)
       elif type(dep_state) is Noop:
-        return Throw(ValueError('No source of explicit dependency {} orig {}'.format(dependency, dep_state)))
+        return Throw(ValueError('No source of explicit dependency {}'.format(dependency)))
       elif type(dep_state) is Throw:
         return dep_state
       else:
@@ -493,7 +493,7 @@ class TaskNode(datatype('TaskNode', ['subject', 'variants', 'rule']), Node):
     # Compute dependencies for the Node, or determine whether it is a Noop.
     dependencies = []
     dep_values = []
-    for index, selector in enumerate(self.rule.input_selectors):
+    for selector in self.rule.input_selectors:
       dep_node = step_context.select_node(selector, self.subject, self.variants)
       dep_state = step_context.get(dep_node)
       if type(dep_state) is Waiting:
