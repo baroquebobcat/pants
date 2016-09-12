@@ -347,8 +347,9 @@ class DependenciesNode(datatype('DependenciesNode', ['subject', 'variants', 'sel
 
   def step(self, step_context):
     # Request the product we need in order to request dependencies.
-    selector = self.selector.dep_product_selector
-    dep_product_node = step_context.select_node(selector, self.subject, self.variants)
+    dep_product_node = step_context.select_node(self.selector.dep_product_selector,
+                                                self.subject,
+                                                self.variants)
     dep_product_state = step_context.get(dep_product_node)
     if type(dep_product_state) in (Throw, Waiting):
       return dep_product_state
