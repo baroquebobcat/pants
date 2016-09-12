@@ -11,8 +11,6 @@ import time
 from collections import defaultdict, deque
 from contextlib import contextmanager
 
-from twitter.common.collections import OrderedSet
-
 from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddress
 from pants.build_graph.address import Address
 from pants.engine.addressable import Addresses, Exactly
@@ -50,12 +48,12 @@ class ProductGraph(object):
       # The computed value for a Node: if a Node hasn't been computed yet, it will be None.
       self.state = None
       # Sets of dependency/dependent Entry objects.
-      self.dependencies = OrderedSet()
-      self.dependents = OrderedSet()
+      self.dependencies = set()
+      self.dependents = set()
       # Illegal/cyclic dependency Nodes. We prevent cyclic dependencies from being introduced into the
       # dependencies/dependents lists themselves, but track them independently in order to provide
       # context specific error messages when they are introduced.
-      self.cyclic_dependencies = OrderedSet()
+      self.cyclic_dependencies = set()
 
     @property
     def is_complete(self):
