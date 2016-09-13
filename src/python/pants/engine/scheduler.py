@@ -13,7 +13,7 @@ from contextlib import contextmanager
 
 from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddress
 from pants.build_graph.address import Address
-from pants.engine.addressable import Addresses, Exactly
+from pants.engine.addressable import Addresses
 from pants.engine.fs import PathGlobs
 from pants.engine.nodes import (FilesystemNode, Node, Noop, Return, Runnable, SelectNode,
                                 StepContext, TaskNode, Throw, Waiting)
@@ -432,7 +432,7 @@ class LocalScheduler(object):
     self._inline_nodes = inline_nodes
 
     select_product = lambda product: Select(product)
-    select_dep_addrs = lambda product: SelectDependencies(product, Exactly(Addresses), field_types=(Address,))
+    select_dep_addrs = lambda product: SelectDependencies(product, Addresses, field_types=(Address,))
     self._root_selector_fns = {
       Address: select_product,
       PathGlobs: select_product,
