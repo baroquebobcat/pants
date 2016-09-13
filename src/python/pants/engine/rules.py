@@ -161,14 +161,11 @@ class RulesetValidator(object):
           selection_products = self._flatten_type_constraints(selection_products)
 
           for selection_product in selection_products:
-            err_msg, warn_msg = self._validate_product_is_provided(rule,
-                                                                   select,
+            err_msg = self._validate_product_is_provided(select,
                                                                    selection_product,
                                                                    type_collections)
             if err_msg:
               rule_errors.append(err_msg)
-            if warn_msg:
-              rule_warnings.append(warn_msg)
         result = RuleValidationResult(rule, rule_errors, rule_warnings)
         if not result.valid():
           if result.rule in validation_results:
@@ -180,36 +177,13 @@ class RulesetValidator(object):
             validation_results[result.rule] = result
     return validation_results
 
-  def _validate_product_is_provided(self, rule, select, selection_product_type, type_collections_by_name):
+  def _validate_product_is_provided(self, select, selection_product_type, type_collections_by_name):
     if any(selection_product_type in types_in_collection
            for types_in_collection in type_collections_by_name.values()):
-      return None, None
-
-    def superclass_of_selection(current_type):
-      return issubclass(selection_product_type, current_type)
-
-    def subclass_of_selection(current_type):
-      return issubclass(current_type, selection_product_type)
-
-    super_types_by_name = {name: filter(superclass_of_selection, types) for name, types in
-      type_collections_by_name.items()}
-    sub_types_by_name = {name: filter(subclass_of_selection, types) for name, types in
-      type_collections_by_name.items()}
-
-    if (all(len(super_types) == 0 for super_types in super_types_by_name.values()) and all(
-        len(sub_types) == 0 for sub_types in sub_types_by_name.values())):
-      # doesn't cover HasProducts relationships or projections since they have middle
-      # implicit types
-      err_msg = 'There is no producer of {} or a super/subclass of it'.format(select)
-      return err_msg, None
+      return None
     else:
-      warn_msg = 'There is only an indirect producer of {}. '.format(select)
-      for name in type_collections_by_name.keys():
-        if super_types_by_name.get(name):
-          warn_msg += ' has supertyped {}: {}'.format(name, super_types_by_name[name])
-        if sub_types_by_name.get(name):
-          warn_msg += ' has subtyped {}: {}'.format(name, sub_types_by_name[name])
-      return None, warn_msg
+      err_msg = 'There is no producer of {}'.format(select)
+      return err_msg
 
   def _flatten_type_constraints(self, selection_products):
     type_constraints = filter(lambda o: isinstance(o, TypeConstraint), selection_products)

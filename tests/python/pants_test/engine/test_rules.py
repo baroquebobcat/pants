@@ -66,7 +66,7 @@ class RulesetValidatorTest(unittest.TestCase):
     self.assertEquals(dedent("""
                                 Found 1 rules with errors:
                                   (A, (Select(B),), noop)
-                                    There is no producer of Select(B) or a super/subclass of it
+                                    There is no producer of Select(B)
                              """).strip(),
       str(cm.exception))
 
@@ -81,8 +81,8 @@ class RulesetValidatorTest(unittest.TestCase):
     self.assertEquals(dedent("""
                                 Found 1 rules with errors:
                                   (A, (Select(B), Select(B)), noop)
-                                    There is no producer of Select(B) or a super/subclass of it
-                                    There is no producer of Select(B) or a super/subclass of it
+                                    There is no producer of Select(B)
+                                    There is no producer of Select(B)
                              """).strip(),
       str(cm.exception))
 
@@ -94,7 +94,7 @@ class RulesetValidatorTest(unittest.TestCase):
 
     validator.validate()
 
-  def test_ruleset_with_superclass_of_selected_type_produced(self):
+  def test_ruleset_with_superclass_of_selected_type_produced_fails(self):
 
     rules = [
       (A, (Select(B),), noop),
@@ -104,7 +104,13 @@ class RulesetValidatorTest(unittest.TestCase):
       goal_to_product=dict(),
       root_subject_types=tuple())
 
-    validator.validate()
+    with self.assertRaises(ValueError) as cm:
+      validator.validate()
+    self.assertEquals(dedent("""
+                                Found 1 rules with errors:
+                                  (B, (Select(SubA),), noop)
+                                    There is no producer of Select(SubA)
+                             """).strip(), str(cm.exception))
 
   def test_ruleset_with_goal_not_produced(self):
     rules = [
@@ -123,7 +129,7 @@ class RulesetValidatorTest(unittest.TestCase):
   def test_ruleset_with_explicit_type_constraint(self):
     rules = [
       (Exactly(A), (Select(B),), noop),
-      (B, (Select(SubA),), noop)
+      (B, (Select(A),), noop)
     ]
     validator = RulesetValidator(NodeBuilder.create(rules),
       goal_to_product=dict(),
