@@ -112,8 +112,7 @@ class GraphTestBase(unittest.TestCase, SchedulerTestBase):
   def _populate(self, scheduler, address):
     """Perform an ExecutionRequest to parse the given Address into a Struct."""
     # NB: requesting any of the possible types that come from parsing a BUILD file
-    requested_product = Exactly(*TestTable.table().values())
-    request = scheduler.execution_request([requested_product], [address])
+    request = scheduler.execution_request([TestTable.constraint()], [address])
     LocalSerialEngine(scheduler).reduce(request)
     root_entries = scheduler.root_entries(request).items()
     self.assertEquals(1, len(root_entries))
