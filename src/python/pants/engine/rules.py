@@ -233,19 +233,19 @@ class NodeBuilder(Closable):
         serializable_tasks[entry.output_product_type].add(entry)
       elif isinstance(entry, (tuple, list)) and len(entry) == 3:
         output_type, input_selectors, task = entry
-        if isinstance(output_type, TypeConstraint):
+        if isinstance(output_type, Exactly):
           constraint = output_type
-        else:
+        elif isinstance(output_type, type):
           constraint = Exactly(output_type)
-        factory = TaskRule(tuple(input_selectors), task, output_type, constraint)
-        if type(constraint) is Exactly:
-          for kind in constraint.types:
-            serializable_tasks[kind].add(factory)
-          serializable_tasks[constraint].add(factory)
         else:
-          raise ValueError('cant handle non exact constraints')
-          # TODO could add a spill collection of factories that check satisfiability of their types
-          # individually
+          raise TypeError("Unexpected product_type type {}, for rule {}".format(output_type, entry))
+
+        factory = TaskRule(tuple(input_selectors), task, output_type, constraint)
+        for kind in constraint.types:
+          # NB Ensure that interior types from SelectDependencies / SelectProjections work by indexing
+          # on the list of types in the constraint.
+          serializable_tasks[kind].add(factory)
+        serializable_tasks[constraint].add(factory)
       else:
         raise TypeError("Unexpected rule type: {}."
                         " Rules either extend Rule, or are 3 elem tuples.".format(type(entry)))
