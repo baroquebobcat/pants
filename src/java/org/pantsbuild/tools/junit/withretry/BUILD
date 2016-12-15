@@ -12,6 +12,7 @@ java_library(
   ),
   dependencies=[
     '3rdparty:junit',
+    'src/java/org/pantsbuild/tools/junit:sec-mgr'
   ],
   platform='java7',
 )

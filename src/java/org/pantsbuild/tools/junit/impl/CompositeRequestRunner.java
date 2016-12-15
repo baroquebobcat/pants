@@ -20,7 +20,7 @@ import org.junit.runners.model.InitializationError;
  * A JUnit Runner that handles a list of {@link Request}s.
  */
 public class CompositeRequestRunner extends ParentRunner<Request> {
-
+//might need to override classblock or something-- aaaarghs
   private final List<Request> requests;
 
   /**
@@ -69,7 +69,7 @@ public class CompositeRequestRunner extends ParentRunner<Request> {
       eachNotifier.fireTestIgnored();
     } catch (StoppedByUserException e) {
       throw e;
-    // We wan't to fail the test no matter what here for an intelligible user message.
+    // We want to fail the test no matter what here for an intelligible user message.
     // SUPPRESS CHECKSTYLE RegexpSinglelineJava
     } catch (Throwable e) {
       eachNotifier.addFailure(e);

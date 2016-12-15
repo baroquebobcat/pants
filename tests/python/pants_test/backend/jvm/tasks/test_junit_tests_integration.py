@@ -104,9 +104,45 @@ class JunitTestsIntegrationTest(PantsRunIntegrationTest):
 
   def test_junit_test_early_exit(self):
     pants_run = self.run_pants([
-        'test',
-        'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:tests'])
+      'test',
+      'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:tests'])
     self.assert_failure(pants_run)
+    self.assert_failed_with_system_exit(pants_run)
+
+  def test_junit_test_early_exit2(self):
+    pants_run = self.run_pants([
+      'test',
+      'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:exit-before'])
+    self.assert_failure(pants_run)
+    # TODO these should be more regular
+    self.assert_failed_with_system_exit(pants_run)
+
+  def test_junit_test_early_exit_after(self):
+    pants_run = self.run_pants([
+      'test',
+      'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:exit-after'])
+    self.assert_failure(pants_run)
+    # TODO these should be more regular
+    self.assert_failed_with_system_exit(pants_run)
+
+  def test_junit_test_early_exit_before_class(self):
+    pants_run = self.run_pants([
+      'test',
+      'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:exit-before-class'])
+    self.assert_failure(pants_run)
+    # TODO these should be more regular
+    self.assert_failed_with_system_exit(pants_run)
+
+  def test_junit_test_early_exit_in_thread(self):
+    pants_run = self.run_pants([
+      'test',
+      'testprojects/src/java/org/pantsbuild/testproject/junit/earlyexit:exit-test-thread'])
+    self.assert_failure(pants_run)
+    # TODO these should be more regular
+    self.assert_failed_with_system_exit(pants_run)
+
+  def assert_failed_with_system_exit(self, pants_run):
+    print(pants_run.stdout_data)
     self.assertIn('java.lang.UnknownError: Abnormal VM exit - test crashed.', pants_run.stdout_data)
     self.assertIn('Tests run: 0,  Failures: 1', pants_run.stdout_data)
     self.assertIn('FATAL: VM exiting unexpectedly.', pants_run.stdout_data)

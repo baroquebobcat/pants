@@ -19,6 +19,7 @@ import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
 import org.pantsbuild.tools.junit.lib.OutputModeTest;
+import org.pantsbuild.tools.junit.lib.SystemExitingTests;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.not;
@@ -86,39 +87,50 @@ public class ConsoleRunnerImplTest {
   }
 
   private String runTests(List<String> tests, boolean shouldFail) {
+    PrintStream originalOut = System.out;
+    PrintStream originalErr = System.err;
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-    PrintStream outputStream = new PrintStream(outContent);
-
-    ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
-        failFast,
-        outputMode,
-        xmlReport,
-        perTestTimer,
-        outdir,
-        defaultConcurrency,
-        parallelThreads,
-        testShard,
-        numTestShards,
-        numRetries,
-        useExperimentalRunner,
-        outputStream,
-        System.err);
-
+    PrintStream quoteOriginalOut = new PrintStream(outContent);
     try {
-      runner.run(tests);
-      if (shouldFail) {
-        fail("Expected RuntimeException");
-      }
-    } catch (RuntimeException e) {
-      if (!shouldFail) {
-        throw e;
-      }
-    }
+      JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, false), quoteOriginalOut);
+      System.setSecurityManager(bofh);
+      ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
+          failFast,
+          outputMode,
+          xmlReport,
+          perTestTimer,
+          outdir,
+          defaultConcurrency,
+          parallelThreads,
+          testShard,
+          numTestShards,
+          numRetries,
+          useExperimentalRunner,
+          quoteOriginalOut,
+          System.err,
+          bofh);
 
-    try {
-      return outContent.toString(Charsets.UTF_8.toString());
-    } catch (UnsupportedEncodingException e) {
-      throw new RuntimeException(e);
+      try {
+        runner.run(tests);
+        if (shouldFail) {
+          fail("Expected RuntimeException");
+        }
+      } catch (RuntimeException e) {
+        originalOut.println("runtime e " + e);
+        if (!shouldFail) {
+          throw e;
+        }
+      }
+      quoteOriginalOut.flush();
+      try {
+        return outContent.toString(Charsets.UTF_8.toString());
+      } catch (UnsupportedEncodingException e) {
+        throw new RuntimeException(e);
+      }
+    } finally {
+
+      System.setOut(originalOut);
+      System.setErr(originalErr);
     }
   }
 
@@ -135,7 +147,15 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
 
+
   @Test
+  public void testFailSystemExit() {
+    String output = runTest(SystemExitingTests.class, true);
+    assertThat(output, containsString("There were 2 failures:"));
+    assertThat(output, containsString("Tests run: 4,  Failures: 4"));
+  }
+
+    @Test
   public void testFailFastWithMultipleThreads() {
     failFast = false;
     parallelThreads = 8;

@@ -7,6 +7,7 @@ import com.google.common.base.Optional;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.concurrent.Callable;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
@@ -75,16 +76,31 @@ class SpecParser {
    * @throws SpecException if the method passed in is not an executable test method
    */
   private Optional<Spec> getOrCreateSpec(String className, String specString) throws SpecException {
-    try {
-      Class<?> clazz = getClass().getClassLoader().loadClass(className);
-      if (Util.isTestClass(clazz)) {
-        if (!specs.containsKey(clazz)) {
-          Spec newSpec = new Spec(clazz);
-          specs.put(clazz, newSpec);
-        }
-        return Optional.of(specs.get(clazz));
+
+    Class<?> clazz = loadOrThrow(className, specString);
+    if (Util.isTestClass(clazz)) {
+      if (!specs.containsKey(clazz)) {
+        Spec newSpec = new Spec(clazz);
+        specs.put(clazz, newSpec);
       }
-      return Optional.absent();
+      return Optional.of(specs.get(clazz));
+    }
+    return Optional.absent();
+  }
+
+  private Class<?> loadOrThrow(final String className, String specString) {
+    JSecMgr securityManager = (JSecMgr) System.getSecurityManager();
+    try {
+      // ping sec mgr -- this execs static client code, so we want to be sure its covered
+
+    return securityManager.withSettings(new JSecMgr.TestSecurityContext(className, "static"),
+        new Callable<Class<?>>() {
+      public Class<?> call() throws Exception {
+          return getClass().getClassLoader().loadClass(className);
+
+      }
+    });
+
     } catch (ClassNotFoundException | NoClassDefFoundError e) {
       throw new SpecException(specString,
           String.format("Class %s not found in classpath.", className), e);
@@ -94,12 +110,13 @@ class SpecParser {
       throw new SpecException(specString,
           String.format("Error linking %s.", className), e);
       // See the comment below for justification.
-    } catch (RuntimeException e) {
+    } catch (Exception e) {
       // The class may fail with some variant of RTE in its static initializers, trap these
       // and dump the bad spec in question to help narrow down issue.
       throw new SpecException(specString,
           String.format("Error initializing %s.",className), e);
     }
+
   }
 
   /**

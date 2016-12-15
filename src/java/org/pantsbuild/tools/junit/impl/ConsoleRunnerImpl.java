@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,6 +59,7 @@ public class ConsoleRunnerImpl {
   private static boolean callSystemExitOnFinish = true;
   /** Intended to be used in unit testing this class */
   private static RunListener testListener = null;
+  private JSecMgr bofh;
 
   /**
    * A stream that allows its underlying output to be swapped.
@@ -146,7 +148,9 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(File file) throws IOException {
-      Preconditions.checkState(closed, "Capture must be closed by all users before it can be read");
+      Preconditions.checkState(
+          closed,
+          "Capture must be closed by all users before it can be read");
       return Files.toByteArray(file);
     }
   }
@@ -192,7 +196,9 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(ByteArrayOutputStream stream) throws IOException {
-      Preconditions.checkState(closed, "Capture must be closed by all users before it can be read");
+      Preconditions.checkState(
+          closed,
+          "Capture must be closed by all users before it can be read");
       return stream.toByteArray();
     }
   }
@@ -322,7 +328,7 @@ public class ConsoleRunnerImpl {
   /**
    * A run listener that will stop the test run after the first test failure.
    */
-  public class FailFastListener extends RunListener {
+  public static class FailFastListener extends RunListener {
     private final RunNotifier runNotifier;
     private final Result result = new Result();
 
@@ -343,7 +349,7 @@ public class ConsoleRunnerImpl {
    * A runner that wraps the original test runner so we can add a listener
    * to stop the tests after the first test failure.
    */
-  public class FailFastRunner extends Runner {
+  public static class FailFastRunner extends Runner {
     private final Runner wrappedRunner;
 
     public FailFastRunner(Runner wrappedRunner) {
@@ -359,6 +365,120 @@ public class ConsoleRunnerImpl {
       wrappedRunner.run(notifier);
     }
   }
+
+  public static class SecRunner extends Runner {
+    private final Runner wrappedRunner;
+    private final JSecMgr bofh;
+
+    public SecRunner(Runner wrappedRunner, JSecMgr bofh) {
+      this.wrappedRunner = wrappedRunner;
+      this.bofh = bofh;
+    }
+
+    @Override public Description getDescription() {
+      return wrappedRunner.getDescription();
+    }
+
+    @Override public void run(RunNotifier notifier) {
+      System.out.println("before add seclistener");
+      notifier.addListener(new SecListener(notifier, bofh));
+      System.out.println("after add seclistener");
+      wrappedRunner.run(notifier);
+      System.out.println("after run");
+    }
+  }
+
+
+  public enum TestState {
+    started,
+    failed,
+  }
+
+  public static class SecListener extends RunListener {
+    private final RunNotifier runNotifier;
+    //private final Result result = new Result();
+    private final Map<Description, TestState> tests =  new HashMap<>();
+    private final JSecMgr bofh;
+    // think I need the RunNofifier here after all to trigger a failure.
+
+
+
+    public SecListener(RunNotifier runNotifier, JSecMgr bofh) {
+      this.runNotifier = runNotifier;
+      this.bofh = bofh;
+    }
+    @Override
+    public void testRunStarted(Description description) throws Exception {
+      // might want to have a nested settings here in the manager
+      super.testRunStarted(description);
+      //bofh.startTestClass(new JSecMgr.TestSecurityContext(description.getClassName()));
+    }
+
+    @Override
+    public void testRunFinished(Result result) throws Exception {
+      System.out.println("ZZZZZZ");
+      if (bofh.anyHasDanglingThreads()) {
+        System.out.println("has dangling threads! ");// description);
+      } else {
+        System.out.println("All good then");
+      }
+    }
+
+    @Override
+    public void testStarted(Description description) throws Exception {
+      super.testStarted(description);
+      System.out.println("test-started: "+description);
+      bofh.startTest(new JSecMgr.TestSecurityContext(description.getClassName(), description.getMethodName()));
+      tests.put(description, TestState.started);
+    }
+
+    @Override
+    public void testFailure(Failure failure) throws Exception {
+      //description.
+      // if not failed and there was a sec issue and we're failing on them, raise an exception
+      tests.put(failure.getDescription(), TestState.failed);
+    }
+
+    @Override
+    public void testAssumptionFailure(Failure failure) {
+      tests.put(failure.getDescription(), TestState.failed);
+    }
+
+    @Override
+    public void testFinished(Description description) throws Exception {
+      System.out.println("finished test " + description);
+      try {
+        TestState testState = tests.get(description);
+        if (testState == TestState.failed) {
+          System.out.println("Listener here: already had failed");
+          // pass -- we're already failing
+          // note, might be worth checking why it failed and printing something
+        } else if (bofh.hadSecIssue(description.getClassName())) {
+          Throwable cause = bofh.securityIssue();
+          System.out.println("Listener here: had sec issue, " + cause);
+          System.out.println("\n     settings: "+ bofh.contextFor(description.getClassName()));
+          if (cause == null) {
+            cause = new RuntimeException("think it should have failed anyway. " +
+                "Think probably shouldnt get here");
+          }
+
+          runNotifier.fireTestFailure(new Failure(description, cause));
+          // if secmgr thinks it should have failed, then fail it.
+        }
+        if (bofh.hasDanglingThreads(description.getClassName())) {
+          System.out.println("has dangling threads! " + description);
+        } else {
+          System.out.println("Listener here: no issues");
+        }
+      } finally {
+        bofh.endTest();
+      }
+      //description.
+      // if not failed and there was a sec issue and we're failing on them, raise an exception
+    }
+
+  }
+
 
   enum OutputMode {
     ALL, FAILURE_ONLY, NONE
@@ -391,7 +511,9 @@ public class ConsoleRunnerImpl {
       int numRetries,
       boolean useExperimentalRunner,
       PrintStream out,
-      PrintStream err) {
+      PrintStream err,
+      JSecMgr bofh) {
+    this.bofh = bofh;
 
     Preconditions.checkNotNull(outputMode);
     Preconditions.checkNotNull(defaultConcurrency);
@@ -423,23 +545,17 @@ public class ConsoleRunnerImpl {
       core.addListener(testListener);
     }
 
+    //core.addListener(new SecListener(runNotifier, bofh));
+
     if (!outdir.exists() && !outdir.mkdirs()) {
       throw new IllegalStateException("Failed to create output directory: " + outdir);
     }
 
-    StreamCapturingListener streamCapturingListener =
-        new StreamCapturingListener(outdir, outputMode, swappableOut, swappableErr);
-    core.addListener(streamCapturingListener);
+    StreamCapturingListener streamCapturingListener = addCaptureListener(core);
 
-    if (xmlReport) {
-      core.addListener(new AntJunitXmlReportListener(outdir, streamCapturingListener));
-    }
+    maybeAddXmlListener(core, streamCapturingListener);
 
-    if (perTestTimer) {
-      core.addListener(new PerTestConsoleListener(swappableOut.getOriginal()));
-    } else {
-      core.addListener(new ConsoleListener(swappableOut.getOriginal()));
-    }
+    core.addListener(consoleListener());
 
     ShutdownListener shutdownListener = new ShutdownListener(swappableOut.getOriginal());
     core.addListener(shutdownListener);
@@ -467,6 +583,30 @@ public class ConsoleRunnerImpl {
       Runtime.getRuntime().removeShutdownHook(unexpectedExitHook);
     }
     exit(failures == 0 ? 0 : 1);
+  }
+
+  private StreamCapturingListener addCaptureListener(JUnitCore core) {
+    StreamCapturingListener streamCapturingListener =
+        new StreamCapturingListener(outdir, outputMode, swappableOut, swappableErr);
+    core.addListener(streamCapturingListener);
+    return streamCapturingListener;
+  }
+
+  private void maybeAddXmlListener(JUnitCore core, StreamCapturingListener streamCapturingListener)
+  {
+    if (xmlReport) {
+      core.addListener(new AntJunitXmlReportListener(outdir, streamCapturingListener));
+    }
+  }
+
+  private RunListener consoleListener() {
+    RunListener listener;
+    if (perTestTimer) {
+      listener = new PerTestConsoleListener(swappableOut.getOriginal());
+    } else {
+      listener = new ConsoleListener(swappableOut.getOriginal());
+    }
+    return listener;
   }
 
   /**
@@ -546,14 +686,20 @@ public class ConsoleRunnerImpl {
     int failures = 0;
     Result result;
     for (Request request : requests) {
-      if (failFast) {
-        result = core.run(new FailFastRunner(request.getRunner()));
-      } else {
-        result = core.run(request);
-      }
+      result = core.run(runnerFor(request));
       failures += result.getFailureCount();
     }
     return failures;
+  }
+
+  private Runner runnerFor(Request request) {
+    Runner reqRunner = request.getRunner();
+    SecRunner withSecRunner = new SecRunner(reqRunner, bofh);
+    if (failFast) {
+      return new FailFastRunner(withSecRunner);
+    } else {
+      return withSecRunner;
+    }
   }
 
   private List<Request> legacyParseRequests(PrintStream err, Collection<Spec> specs) {
@@ -572,39 +718,53 @@ public class ConsoleRunnerImpl {
     List<Request> requests = Lists.newArrayList();
     if (!classes.isEmpty()) {
       if (this.perTestTimer || this.parallelThreads > 1) {
-        for (Class<?> clazz : classes) {
-          if (legacyShouldRunParallelMethods(clazz)) {
-            if (ScalaTestUtil.isScalaTestTest(clazz)) {
-              // legacy and scala doesn't work easily.  just adding the class
-              requests.add(new AnnotatedClassRequest(clazz, numRetries, err));
-            } else {
-              testMethods.addAll(TestMethod.fromClass(clazz));
-            }
-          } else {
-            requests.add(new AnnotatedClassRequest(clazz, numRetries, err));
-          }
-        }
+        addToRequestsOrTestMethods(err, classes, testMethods, requests);
       } else {
-        // The code below does what the original call
-        // requests.add(Request.classes(classes.toArray(new Class<?>[classes.size()])));
-        // does, except that it instantiates our own builder, needed to support retries.
-        try {
-          CustomAnnotationBuilder builder =
-              new CustomAnnotationBuilder(numRetries, err);
-          Runner suite = new Computer().getSuite(
-              builder, classes.toArray(new Class<?>[classes.size()]));
-          requests.add(Request.runner(suite));
-        } catch (InitializationError e) {
-          throw new RuntimeException(
-              "Internal error: Suite constructor, called as above, should always complete");
-        }
+        constructRequestsWithCustomBuilder(err, classes, requests);
       }
     }
     for (TestMethod testMethod : testMethods) {
-      requests.add(new AnnotatedClassRequest(testMethod.clazz, numRetries, err)
+      requests.add(newAnnotatedClassRequest(err, testMethod.clazz)
           .filterWith(Description.createTestDescription(testMethod.clazz, testMethod.name)));
     }
     return requests;
+  }
+
+  private void addToRequestsOrTestMethods(PrintStream err, Set<Class<?>> classes,
+                                          Set<TestMethod> testMethods, List<Request> requests) {
+    for (Class<?> clazz : classes) {
+      if (legacyShouldRunParallelMethods(clazz)) {
+        if (ScalaTestUtil.isScalaTestTest(clazz)) {
+          // legacy and scala doesn't work easily.  just adding the class
+          requests.add(newAnnotatedClassRequest(err, clazz));
+        } else {
+          testMethods.addAll(TestMethod.fromClass(clazz));
+        }
+      } else {
+        requests.add(newAnnotatedClassRequest(err, clazz));
+      }
+    }
+  }
+
+  private AnnotatedClassRequest newAnnotatedClassRequest(PrintStream err, Class<?> clazz) {
+    return new AnnotatedClassRequest(clazz, numRetries, err);
+  }
+
+  private void constructRequestsWithCustomBuilder(PrintStream err, Set<Class<?>> classes,
+                                                  List<Request> requests) {
+    // The code below does what the original call
+    // requests.add(Request.classes(classes.toArray(new Class<?>[classes.size()])));
+    // does, except that it instantiates our own builder, needed to support retries.
+    try {
+      CustomAnnotationBuilder builder =
+          new CustomAnnotationBuilder(numRetries, err);
+      Runner suite = new Computer().getSuite(
+          builder, classes.toArray(new Class<?>[classes.size()]));
+      requests.add(Request.runner(suite));
+    } catch (InitializationError e) {
+      throw new RuntimeException(
+          "Internal error: Suite constructor, called as above, should always complete");
+    }
   }
 
   private boolean legacyShouldRunParallelMethods(Class<?> clazz) {
@@ -802,16 +962,20 @@ public class ConsoleRunnerImpl {
     CmdLineParser parser = new CmdLineParser(options);
     try {
       parser.parseArgument(args);
-    } catch (CmdLineException e) {
-      parser.printUsage(System.err);
-      exit(1);
-    } catch (InvalidCmdLineArgumentException e) {
+    } catch (CmdLineException | InvalidCmdLineArgumentException e) {
       parser.printUsage(System.err);
       exit(1);
     }
 
     options.defaultConcurrency = computeConcurrencyOption(options.defaultConcurrency,
         options.defaultParallel);
+
+    PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
+    PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
+
+    JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true), out);
+    System.setSecurityManager(bofh);
+
 
     ConsoleRunnerImpl runner =
         new ConsoleRunnerImpl(options.failFast,
@@ -826,8 +990,9 @@ public class ConsoleRunnerImpl {
             options.numRetries,
             options.useExperimentalRunner,
             // NB: Buffering helps speedup output-heavy tests.
-            new PrintStream(new BufferedOutputStream(System.out), true),
-            new PrintStream(new BufferedOutputStream(System.err), true));
+            out,
+            err,
+            bofh);
 
     List<String> tests = Lists.newArrayList();
     for (String test : options.tests) {
@@ -843,6 +1008,8 @@ public class ConsoleRunnerImpl {
         tests.add(test);
       }
     }
+
+
     runner.run(tests);
   }
 

@@ -5,11 +5,14 @@ package org.pantsbuild.tools.junit.withretry;
 
 import java.io.PrintStream;
 import java.lang.reflect.Method;
+import java.util.concurrent.Callable;
 
+import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.Statement;
+import org.pantsbuild.tools.junit.impl.JSecMgr;
 
 /**
  * A subclass of BlockJUnit4ClassRunner that supports retrying failing tests, up to the
@@ -32,21 +35,52 @@ public class BlockJUnit4ClassRunnerWithRetry extends BlockJUnit4ClassRunner {
     return super.methodBlock(method);
   }
 
+  protected Statement classBlock(final RunNotifier notifier) {
+    return super.classBlock(notifier);
+  }
+
   @Override
   protected Statement methodBlock(FrameworkMethod method) {
     return new InvokeWithRetry(method);
+  }
+
+  private class WithSecManagerStuff extends Statement {
+    private final Statement inner;
+
+    WithSecManagerStuff(Statement inner) {
+      this.inner = inner;
+    }
+
+    @Override
+    public void evaluate() throws Throwable {
+      ((JSecMgr)System.getSecurityManager()).withSettings(
+          new JSecMgr.TestSecurityContext("something", "somemethod"), new Callable<Void>() {
+        @Override
+        public Void call() {
+          try {
+            inner.evaluate();
+          } catch (Throwable throwable) {
+            throwable.printStackTrace();
+            // AAAAAAAaaargh
+            throw new RuntimeException(throwable);
+          }
+          return null;
+        }
+      });
+    }
   }
 
   private class InvokeWithRetry extends Statement {
 
     private final FrameworkMethod method;
 
-    public InvokeWithRetry(FrameworkMethod method) {
+    InvokeWithRetry(FrameworkMethod method) {
       this.method = method;
     }
 
     @Override
     public void evaluate() throws Throwable {
+      // could inject the sec mgr here, since this wraps the full thing.
       Throwable error = null;
       for (int i = 0; i <= numRetries; i++) {
         try {

@@ -31,6 +31,7 @@ public final class ScalaTestUtil {
    */
   public static boolean isScalaTestTest(Class<?> clazz) {
     try {
+      // secmgr?
       Class suiteClass = Class.forName("org.scalatest.Suite", true, clazz.getClassLoader());
       return suiteClass.isAssignableFrom(clazz);
     } catch (ClassNotFoundException e) {

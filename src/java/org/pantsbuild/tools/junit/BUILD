@@ -19,10 +19,16 @@ java_library(
     'src/java/org/pantsbuild/args4j',
     'src/java/org/pantsbuild/junit/annotations',
     'src/java/org/pantsbuild/tools/junit/withretry',
+    ':sec-mgr',
   ],
-  sources=globs('*.java', 'impl/*.java', 'impl/experimental/*.java'),
+  sources=globs('*.java', 'impl/*.java', 'impl/experimental/*.java', exclude=['impl/JSecMgr.java']),
   platform='java7',
 )
+
+java_library(name='sec-mgr',
+             sources=['impl/JSecMgr.java'],
+             dependencies=[],
+             platform='java7',)
 
 jvm_binary(
   name='main',
