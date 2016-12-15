@@ -45,11 +45,8 @@ public class SystemExitingTests {
     }
   }
 
-
-  // hmm. Maybe a map between thread groups and settings would allow this to work w/o the
-
   @Test
-  public void testExitInJoinedThread() throws Exception {
+  public void exitInJoinedThread() throws Exception {
     Thread thread = new Thread(new Runnable() {
       @Override
       public void run() {
@@ -61,7 +58,7 @@ public class SystemExitingTests {
   }
 
   @Test
-  public void testExitInNotJoinedThread() {
+  public void exitInNotJoinedThread() {
     Thread thread = new Thread(new Runnable() {
       @Override
       public void run() {
