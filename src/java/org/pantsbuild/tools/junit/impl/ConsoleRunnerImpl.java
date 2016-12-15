@@ -416,19 +416,19 @@ public class ConsoleRunnerImpl {
 
     @Override
     public void testRunFinished(Result result) throws Exception {
-      System.out.println("ZZZZZZ");
       if (bofh.anyHasDanglingThreads()) {
-        System.out.println("has dangling threads! ");// description);
+        log("has dangling threads! ");
       } else {
-        System.out.println("All good then");
+        log("All good then");
       }
     }
 
     @Override
     public void testStarted(Description description) throws Exception {
       super.testStarted(description);
-      System.out.println("test-started: "+description);
-      bofh.startTest(new JSecMgr.TestSecurityContext(description.getClassName(), description.getMethodName()));
+      log("test-started: "+description);
+      bofh.startTest(new JSecMgr.TestSecurityContext(description.getClassName(),
+                                                     description.getMethodName()));
       tests.put(description, TestState.started);
     }
 
@@ -446,17 +446,18 @@ public class ConsoleRunnerImpl {
 
     @Override
     public void testFinished(Description description) throws Exception {
-      System.out.println("finished test " + description);
+      // check for dangling resources here
+      log("finished test " + description);
       try {
         TestState testState = tests.get(description);
         if (testState == TestState.failed) {
-          System.out.println("Listener here: already had failed");
+          log("Listener here: already had failed");
           // pass -- we're already failing
           // note, might be worth checking why it failed and printing something
         } else if (bofh.hadSecIssue(description.getClassName())) {
           Throwable cause = bofh.securityIssue();
-          System.out.println("Listener here: had sec issue, " + cause);
-          System.out.println("\n     settings: "+ bofh.contextFor(description.getClassName()));
+          log("Listener here: had sec issue, " + cause);
+          log("\n     settings: "+ bofh.contextFor(description.getClassName()));
           if (cause == null) {
             cause = new RuntimeException("think it should have failed anyway. " +
                 "Think probably shouldnt get here");
@@ -466,15 +467,19 @@ public class ConsoleRunnerImpl {
           // if secmgr thinks it should have failed, then fail it.
         }
         if (bofh.hasDanglingThreads(description.getClassName())) {
-          System.out.println("has dangling threads! " + description);
+          log("has dangling threads! " + description);
         } else {
-          System.out.println("Listener here: no issues");
+          log("Listener here: no issues");
         }
       } finally {
         bofh.endTest();
       }
       //description.
       // if not failed and there was a sec issue and we're failing on them, raise an exception
+    }
+
+    private void log(String x) {
+      System.out.println(x);
     }
 
   }

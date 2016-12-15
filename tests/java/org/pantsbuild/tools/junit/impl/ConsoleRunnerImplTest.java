@@ -87,12 +87,17 @@ public class ConsoleRunnerImplTest {
   }
 
   private String runTests(List<String> tests, boolean shouldFail) {
+    JSecMgr.JSecMgrConfig securityConfig = new JSecMgr.JSecMgrConfig(true,false);
+    return runTests(tests, shouldFail, securityConfig);
+  }
+
+  private String runTests(List<String> tests, boolean shouldFail, JSecMgr.JSecMgrConfig config) {
     PrintStream originalOut = System.out;
     PrintStream originalErr = System.err;
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     PrintStream quoteOriginalOut = new PrintStream(outContent);
     try {
-      JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, false), quoteOriginalOut);
+      JSecMgr bofh = new JSecMgr(config, quoteOriginalOut);
       System.setSecurityManager(bofh);
       ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
           failFast,
@@ -131,6 +136,8 @@ public class ConsoleRunnerImplTest {
 
       System.setOut(originalOut);
       System.setErr(originalErr);
+
+      System.setSecurityManager(null); // TODO disallow this
     }
   }
 

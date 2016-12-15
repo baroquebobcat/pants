@@ -19,6 +19,81 @@ public class JSecMgr extends SecurityManager {
   private final JSecMgrConfig config;
   private final PrintStream out;
 
+  // lifecycle
+  // execution contexts:
+  //   StaticContext
+  //      when the class containing tests is loaded
+  //   SuiteContext
+  //      while the beforeclass et al are being run -- analogous to classBlock in the block runner
+  //   TestContext
+  //      while the test case is running
+  //
+  // thread contexts:
+
+  //    Test class context / might also be suite context
+  //       holds threads started in the class/suite context
+  //    Test case context
+  //       holds threads started in the method/case context
+  //    Q should threads started in a static context be considered to exist in the class context?
+  //
+
+  // exception handling:
+  //   allow tests to swallow Security exceptions
+  //   force test failure on Sec exceptions
+  // scopes:
+  //   test suite
+  //   all tests
+  //   test case
+  //   static eval
+  //
+  // file:
+  //   disallow all
+  //   allow only specified files / dirs
+  //   allow all
+  //
+  // network:
+  //   disallow all
+  //   allow only localhost and loop back
+  //   allow only localhost connections, but allow dns resolve to see if address is pointed at
+  //              localhost
+  //   allow all
+  //
+  // System.exit
+  //   disallow
+  //   allow
+  //
+  // Threads
+  //   disallow creation
+  //   fail if threads live beyond test case
+  //   fail if threads live beyond test suite
+  //   allow all
+  // disallow network access
+
+
+
+  // scheme.
+  //   sets a thread local with the testSecurityContext
+  //   if a thread is created, injects the testSecurityContext into its thread local table when it
+  //   is constructed.
+  //   not sure if thats possible.
+  //   could use this for ThreadGroups
+
+  // java.io.FilePermission
+  // , java.net.SocketPermission,
+  // java.net.NetPermission,
+  // java.security.SecurityPermission,
+  // java.lang.RuntimePermission,
+  // java.util.PropertyPermission, java.awt.AWTPermission, java.lang.reflect.ReflectPermission,
+  // and java.io.SerializablePermission.
+
+
+  JSecMgr(JSecMgrConfig config, PrintStream out) {
+    super();
+    //getClassContext()
+    this.config = config;
+    this.out = out;
+  }
+
   public boolean hadSecIssue() {
     TestSecurityContext testSecurityContext = lookupContext();
     return hadSecIssue(testSecurityContext);
@@ -44,7 +119,7 @@ public class JSecMgr extends SecurityManager {
   }
 
   public boolean hasDanglingThreads(String className) {
-    TestSecurityContext testSecurityContext = getContextsForClassName(className);
+    TestSecurityContext testSecurityContext = getContextForClassName(className);
     if (testSecurityContext == null) {
       return false;
     }
@@ -52,7 +127,7 @@ public class JSecMgr extends SecurityManager {
   }
 
   public boolean hadSecIssue(String className) {
-    TestSecurityContext testSecurityContext = getContextsForClassName(className);
+    TestSecurityContext testSecurityContext = getContextForClassName(className);
     return hadSecIssue(testSecurityContext);
   }
 
@@ -61,19 +136,20 @@ public class JSecMgr extends SecurityManager {
     // check the current thread group
     // else
     // walk the stack to find a matching class.
-    TestSecurityContext testSecurityContextFromRef = settingsRef.get();
-    if (testSecurityContextFromRef != null) {
+    TestSecurityContext contextFromRef = settingsRef.get();
+    if (contextFromRef != null) {
       log("lookupContext", "found via ref!");
-      return testSecurityContextFromRef;
+      return contextFromRef;
     }
 
     String threadGroupName = Thread.currentThread().getThreadGroup().getName();
-    String classNameFromThreadGroupName = threadGroupName.split("-")[0];
-    TestSecurityContext testSecurityContextFromThreadGroup = getContextsForClassName(
-        classNameFromThreadGroupName );
-    if (testSecurityContextFromThreadGroup != null) {
+    String[] split = threadGroupName.split("-");
+    String classNameFromThreadGroup = split[0];
+    //String methodNameFromThreadGroup = split[2];
+    TestSecurityContext contextFromThreadGroup = getContextForClassName(classNameFromThreadGroup);
+    if (contextFromThreadGroup != null) {
       log("lookupContext", "found via thread group: "+threadGroupName);
-      return testSecurityContextFromThreadGroup;
+      return contextFromThreadGroup;
     } else {
       log("lookupContext", " not found thread group: " + threadGroupName);
       log("lookupContext", " available "+classNameToSettings.keySet());
@@ -81,7 +157,7 @@ public class JSecMgr extends SecurityManager {
 
     for (Class<?> c :getClassContext()) {
       // this will no longer match.
-      TestSecurityContext testSecurityContext = getContextsForClassName(c.getName());
+      TestSecurityContext testSecurityContext = getContextForClassName(c.getName());
       if (testSecurityContext != null) {
         log("lookupContext", "found matching stack element!");
         return testSecurityContext;
@@ -102,12 +178,12 @@ public class JSecMgr extends SecurityManager {
     return testSecurityContext.getFailures().size() > 0;
   }
 
-  private TestSecurityContext getContextsForClassName(String className) {
+  private TestSecurityContext getContextForClassName(String className) {
     return classNameToSettings.get(className);
   }
 
   public TestSecurityContext contextFor(String className) {
-    return getContextsForClassName(className);
+    return getContextForClassName(className);
   }
 
   public boolean anyHasDanglingThreads() {
@@ -119,7 +195,91 @@ public class JSecMgr extends SecurityManager {
     return false;
   }
 
-  static class JSecMgrConfig {
+  public void endTest() {
+    settingsRef.remove();
+  }
+
+  public void withSettings(TestSecurityContext testSecurityContext, Runnable runnable) {
+    startTest(testSecurityContext);
+    runnable.run();
+    endTest();
+  }
+
+  public <V> V withSettings(TestSecurityContext context, Callable<V> callable) throws Exception {
+    startTest(context);
+    V result = callable.call();
+    endTest();
+    return result;
+  }
+
+  @Override
+  public Object getSecurityContext() {
+    return settingsRef.get();
+  }
+
+  @Override
+  public void checkPermission(Permission perm) {
+    if (deferPermission(perm)) {
+      super.checkPermission(perm);
+    }
+  }
+
+  @Override
+  public void checkPermission(Permission perm, Object context) {
+    super.checkPermission(perm, context);
+  }
+
+  private boolean deferPermission(Permission perm) {
+    return false;
+  }
+
+  @Override
+  public ThreadGroup getThreadGroup() {
+    TestSecurityContext testSecurityContext = lookupContext();
+    if (testSecurityContext != null) {
+      return testSecurityContext.getThreadGroup();
+    } else {
+      return null;
+    }
+  }
+
+  @Override
+  public void checkExit(int status) {
+    //out.println("tried a system exit!");
+    //System.out.println("tried a system exit! System.out");
+    //System.err.println("tried a system exit! on err");
+    //if (true) {
+    //  throw new RuntimeException("wut");
+    //}
+    //Thread.currentThread().getThreadGroup()
+    if (config.disallowSystemExit()) {
+      // TODO improve message so that it points out the line the call happened on more explicitly.
+      //
+      SecurityException ex;
+      TestSecurityContext context = lookupContext();
+      if (context != null) {
+        ex = new SecurityException("System.exit calls are not allowed. context: " + context);
+            /*"\n" +
+            "  "+ testSecurityContext.className+ "\n"+
+            "  cur thread group: "+ threadGroup+"\n"+
+            "    thrd ct: "+threadGroup.activeCount() +"\n"+
+            "  testSecurityContext thread group: "+ testSecurityContext.threadGroup+"\n"+
+            "    thrd ct: "+ testSecurityContext.threadGroup.activeCount() +"\n"
+
+        );*/
+        context.addFailure(ex);
+      } else {
+        log("checkExit", "Couldn't find a context for disallowed system exit!");
+        ex = new SecurityException("System.exit calls are not allowed.");
+      }
+      // docs say to call super before throwing.
+      super.checkExit(status);
+      throw ex;
+    }
+  }
+
+
+  public static class JSecMgrConfig {
 
     public final boolean useThreadGroup;
     public final boolean allowExit;
@@ -127,6 +287,10 @@ public class JSecMgr extends SecurityManager {
     JSecMgrConfig(boolean useThreadGroup, boolean allowExit) {
       this.useThreadGroup = useThreadGroup;
       this.allowExit = allowExit;
+    }
+
+    public boolean disallowSystemExit() {
+      return !allowExit;
     }
   }
 
@@ -164,7 +328,7 @@ public class JSecMgr extends SecurityManager {
     @Override
     public String toString() {
       return "TestSecurityContext{" +
-          "className='" + className + '\'' +
+          className + "#" + methodName +
           ", threadGroup=" + threadGroup +
           ", threadGroupActiveCt=" + threadGroup.activeCount() +
           ", failureException=" + failureException +
@@ -172,134 +336,4 @@ public class JSecMgr extends SecurityManager {
     }
   }
 
-  JSecMgr(JSecMgrConfig config, PrintStream out) {
-    this.config = config;
-    this.out = out;
-  }
-
-  public void endTest() {
-    settingsRef.remove();
-  }
-
-  // scheme.
-  //   sets a thread local with the testSecurityContext
-  //   if a thread is created, injects the testSecurityContext into its thread local table when it is
-  //   constructed.
-  //   not sure if thats possible.
-  //   could use this for ThreadGroups
-  public void withSettings(TestSecurityContext testSecurityContext, Runnable runnable) {
-    startTest(testSecurityContext);
-    runnable.run();
-    endTest();
-  }
-
-  public <V> V withSettings(TestSecurityContext testSecurityContext, Callable<V> callable) throws Exception {
-    startTest(testSecurityContext);
-    V result = callable.call();
-    endTest();
-    return result;
-  }
-
-  public Object getSecurityContext() {
-    return settingsRef.get();
-  }
-
-  public void checkPermission(Permission perm) {
-    if (deferPermission(perm)) {
-      super.checkPermission(perm);
-    }
-  }
-
-  public void checkPermission(Permission perm, Object context) {
-    super.checkPermission(perm, context);
-  }
-
-  private boolean deferPermission(Permission perm) {
-    return false;
-  }
-
-
-  // exception handling:
-  //   allow tests to swallow Security exceptions
-  //   force test failure on Sec exceptions
-  // scopes:
-  //   test suite
-  //   all tests
-  //   test case
-  //   static eval
-  //
-  // file:
-  //   disallow all
-  //   allow only specified files / dirs
-  //   allow all
-  //
-  // network:
-  //   disallow all
-  //   allow only localhost and loop back
-  //   allow only localhost connections, but allow dns resolve to see if address is pointed at
-  //              localhost
-  //   allow all
-  //
-  // System.exit
-  //   disallow
-  //   allow
-  //
-  // Threads
-  //   disallow creation
-  //   fail if threads live beyond test case
-  //   fail if threads live beyond test suite
-  //   allow all
-  // disallow network access
-
-
-  // java.io.FilePermission
-  // , java.net.SocketPermission,
-  // java.net.NetPermission,
-  // java.security.SecurityPermission,
-  // java.lang.RuntimePermission,
-  // java.util.PropertyPermission, java.awt.AWTPermission, java.lang.reflect.ReflectPermission,
-  // and java.io.SerializablePermission.
-
-  public ThreadGroup getThreadGroup() {
-    TestSecurityContext testSecurityContext = lookupContext();
-    if (testSecurityContext != null) {
-      return testSecurityContext.getThreadGroup();
-    } else {
-      return null;
-    }
-  }
-
-  public void checkExit(int status) {
-    out.println("tried a system exit!");
-    //System.out.println("tried a system exit! System.out");
-    //System.err.println("tried a system exit! on err");
-    //if (true) {
-    //  throw new RuntimeException("wut");
-    //}
-    //Thread.currentThread().getThreadGroup()
-    if (!config.allowExit) {
-      // TODO improve message so that it points out the line the call happened on more explicitly.
-      //
-      SecurityException ex;
-      TestSecurityContext testSecurityContext = lookupContext();
-      if (testSecurityContext != null) {
-        ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
-        ex = new SecurityException("System.exit calls are not allowed.\n" +
-            "  "+ testSecurityContext.className+ "\n"+
-            "  cur thread group: "+ threadGroup+"\n"+
-            "    thrd ct: "+threadGroup.activeCount() +"\n"+
-            "  testSecurityContext thread group: "+ testSecurityContext.threadGroup+"\n"+
-            "    thrd ct: "+ testSecurityContext.threadGroup.activeCount() +"\n"
-
-        );
-        testSecurityContext.addFailure(ex);
-      } else {
-        ex = new SecurityException("System.exit calls are not allowed.");
-        // TODO maybe do something here
-      }
-      // docs say to call super before throwing.
-      super.checkExit(status);
-      throw ex;
-    }
-  }
 }
