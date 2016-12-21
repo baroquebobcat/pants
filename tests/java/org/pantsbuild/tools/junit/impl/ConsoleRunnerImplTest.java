@@ -19,7 +19,9 @@ import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
 import org.pantsbuild.tools.junit.lib.OutputModeTest;
-import org.pantsbuild.tools.junit.lib.SystemExitingTests;
+import org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests;
+import org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase;
+import org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.not;
@@ -87,7 +89,7 @@ public class ConsoleRunnerImplTest {
   }
 
   private String runTests(List<String> tests, boolean shouldFail) {
-    JSecMgr.JSecMgrConfig securityConfig = new JSecMgr.JSecMgrConfig(true,false);
+    JSecMgr.JSecMgrConfig securityConfig = new JSecMgr.JSecMgrConfig(true,false, false);
     return runTests(tests, shouldFail, securityConfig);
   }
 
@@ -98,10 +100,11 @@ public class ConsoleRunnerImplTest {
   private String runTests(List<String> tests, boolean shouldFail, JSecMgr.JSecMgrConfig config) {
     PrintStream originalOut = System.out;
     PrintStream originalErr = System.err;
+
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-    PrintStream quoteOriginalOut = new PrintStream(outContent);
+    PrintStream quoteOriginalOut = new PrintStream(outContent, true);
+    JSecMgr bofh = new JSecMgr(config, quoteOriginalOut);
     try {
-      JSecMgr bofh = new JSecMgr(config, quoteOriginalOut);
       System.setSecurityManager(bofh);
       ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
           failFast,
@@ -116,7 +119,8 @@ public class ConsoleRunnerImplTest {
           numRetries,
           useExperimentalRunner,
           quoteOriginalOut,
-          System.err,
+          System.err, // TODO, if there's an error reported on system err, it doesn't show up in
+                      // the test failures.
           bofh);
 
       try {
@@ -138,10 +142,27 @@ public class ConsoleRunnerImplTest {
       }
     } finally {
 
+      // there might be a better way to do this.
+      if (bofh.anyHasDanglingThreads()) {
+        originalErr.println("had dangling threads, trying interrupt");
+        bofh.interruptDanglingThreads();
+        if (bofh.anyHasDanglingThreads()) {
+          originalErr.println("there are still remaining threads, sleeping");
+          try {
+            Thread.sleep(100);
+          } catch (InterruptedException e) {
+            // ignore
+          }
+        }
+      } else {
+        originalErr.println("no remaining threads");
+      }
+
       System.setOut(originalOut);
       System.setErr(originalErr);
 
-      System.setSecurityManager(null); // TODO disallow this
+      System.setSecurityManager(null); // TODO disallow this, but allow here, could also
+                                       // TODO add a reset button to the sec mgr
     }
   }
 
@@ -158,13 +179,12 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
 
-
   @Test
   public void testFailSystemExit() {
-    String output = runTests(SystemExitingTests.class,
+    String output = runTests(SecBoundarySystemExitTests.class,
         true,
-        new JSecMgr.JSecMgrConfig(true, false));
-    String testClass = "org.pantsbuild.tools.junit.lib.SystemExitingTests";
+        new JSecMgr.JSecMgrConfig(true, false, false));
+    String testClass = "org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests";
     assertThat(output, containsString("directSystemExit(" + testClass + ")"));
     assertThat(output, containsString("catchesSystemExit(" + testClass + ")"));
     assertThat(output, containsString("exitInJoinedThread(" + testClass + ")"));
@@ -172,8 +192,32 @@ public class ConsoleRunnerImplTest {
     //assertThat(output, containsString("exitInNotJoinedThread(" + testClass + ")"));
     //assertThat(output, containsString("There were 4 failures:"));
     //assertThat(output, containsString("Tests run: 5,  Failures: 4"));
+
     assertThat(output, containsString("There were 3 failures:"));
     assertThat(output, containsString("Tests run: 5,  Failures: 3"));
+  }
+
+  @Test
+  public void testDisallowDanglingThreadStartedInClass() {
+    String output = runTests(SecDanglingThreadFromTestCase.class,
+        true,
+        new JSecMgr.JSecMgrConfig(true, false, false));
+    String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
+    assertThat(output, containsString("startedThread(" + testClass + ")"));
+    assertThat(output, containsString("There were 3 failures:"));
+    assertThat(output, containsString("Tests run: 5,  Failures: 3"));
+  }
+
+// test other class spawns thread st the testt class isnt in class context of secmgr
+  @Test
+  public void treatStaticSystemExitAsFailure() {
+    String output = runTests(SecStaticSysExitTestCase.class,
+        true,
+        new JSecMgr.JSecMgrConfig(true, false, false));
+    String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
+    //assertThat(output, containsString("startedThread(" + testClass + ")"));
+    assertThat(output, containsString("There were 1 failures:"));
+    assertThat(output, containsString("Tests run: 0,  Failures: 1"));
   }
 
     @Test

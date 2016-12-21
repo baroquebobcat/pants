@@ -5,6 +5,10 @@ package org.pantsbuild.tools.junit.impl;
 
 import com.google.common.base.Optional;
 import java.lang.reflect.Method;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.security.PrivilegedExceptionAction;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.concurrent.Callable;
@@ -89,19 +93,43 @@ class SpecParser {
   }
 
   private Class<?> loadOrThrow(final String className, String specString) {
-    JSecMgr securityManager = (JSecMgr) System.getSecurityManager();
+   final JSecMgr securityManager = (JSecMgr) System.getSecurityManager();
     try {
+      // VV isn't right. This can't exec static client code.
       // ping sec mgr -- this execs static client code, so we want to be sure its covered
+      return AccessController.doPrivileged(
 
-    return securityManager.withSettings(new JSecMgr.TestSecurityContext(className, "static"),
+          new PrivilegedExceptionAction<Class<?>>() {
+            @Override
+            public Class<?> run() throws Exception {
+
+      return securityManager.withSettings(new JSecMgr.SomeTestSecurityContext(className,
+              "static"),
         new Callable<Class<?>>() {
-      public Class<?> call() throws Exception {
-          return getClass().getClassLoader().loadClass(className);
+      public Class<?> call() throws ClassNotFoundException {
+        System.out.println("loading class for :"+className);
+        System.err.println("loading class for ... :"+className);
 
+        Class<?> aClass = getClass().getClassLoader().loadClass(className);
+
+        System.err.println("getClass().getClassLoader() "+getClass().getClassLoader());
+        System.err.println("maybe try inspecting loaded class");
+        System.err.println("name via class call: "+aClass.getCanonicalName());
+        System.err.println("methods: "+ Arrays.toString(aClass.getDeclaredMethods()));
+        System.err.println("loading class successful for ... :"+className);
+
+        return aClass;
       }
     });
 
-    } catch (ClassNotFoundException | NoClassDefFoundError e) {
+
+
+            }
+          },
+          AccessController.getContext()
+      );
+
+    } catch (/*ClassNotFoundException | */NoClassDefFoundError e) {
       throw new SpecException(specString,
           String.format("Class %s not found in classpath.", className), e);
     } catch (LinkageError e) {

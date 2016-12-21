@@ -380,11 +380,15 @@ public class ConsoleRunnerImpl {
     }
 
     @Override public void run(RunNotifier notifier) {
-      System.out.println("before add seclistener");
+      log("before add seclistener");
       notifier.addListener(new SecListener(notifier, bofh));
-      System.out.println("after add seclistener");
+      log("after add seclistener");
       wrappedRunner.run(notifier);
-      System.out.println("after run");
+      log("after run");
+    }
+
+    private void log(String s) {
+      System.err.println(s);
     }
   }
 
@@ -427,7 +431,7 @@ public class ConsoleRunnerImpl {
     public void testStarted(Description description) throws Exception {
       super.testStarted(description);
       log("test-started: "+description);
-      bofh.startTest(new JSecMgr.TestSecurityContext(description.getClassName(),
+      bofh.startTest(new JSecMgr.SomeTestSecurityContext(description.getClassName(),
                                                      description.getMethodName()));
       tests.put(description, TestState.started);
     }
@@ -468,6 +472,11 @@ public class ConsoleRunnerImpl {
         }
         if (bofh.hasDanglingThreads(description.getClassName())) {
           log("has dangling threads! " + description);
+          if (bofh.config.disallowDanglingThread()) {
+            runNotifier.fireTestFailure(new Failure(
+                description,
+                new SecurityException("Threads from "+description+" are still running.")));
+          }
         } else {
           log("Listener here: no issues");
         }
@@ -479,7 +488,7 @@ public class ConsoleRunnerImpl {
     }
 
     private void log(String x) {
-      System.out.println(x);
+      System.err.println(x);
     }
 
   }
@@ -978,7 +987,7 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true), out);
+    JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true, false), out);
     System.setSecurityManager(bofh);
 
 

@@ -6,10 +6,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-/**
- * Created by nhoward on 12/14/16.
- */
-public class SystemExitingTests {
+public class SecBoundarySystemExitTests {
 
   @BeforeClass
   public static void wut() {
@@ -20,6 +17,7 @@ public class SystemExitingTests {
   public static void after() {
     System.out.println("=after class.");
   }
+
   @Before
   public void wut2() {
     System.out.println("==before.");
@@ -78,5 +76,4 @@ public class SystemExitingTests {
   public void justSleeps() throws InterruptedException {
     Thread.sleep(10);
   }
-
 }

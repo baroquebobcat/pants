@@ -54,7 +54,7 @@ public class BlockJUnit4ClassRunnerWithRetry extends BlockJUnit4ClassRunner {
     @Override
     public void evaluate() throws Throwable {
       ((JSecMgr)System.getSecurityManager()).withSettings(
-          new JSecMgr.TestSecurityContext("something", "somemethod"), new Callable<Void>() {
+          new JSecMgr.SomeTestSecurityContext("something", "somemethod"), new Callable<Void>() {
         @Override
         public Void call() {
           try {

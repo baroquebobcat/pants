@@ -16,7 +16,7 @@ public class JSecMgr extends SecurityManager {
   private final Map<String, TestSecurityContext> classNameToSettings = new HashMap<>();
   private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
 
-  private final JSecMgrConfig config;
+  final JSecMgrConfig config;
   private final PrintStream out;
 
   // lifecycle
@@ -94,21 +94,16 @@ public class JSecMgr extends SecurityManager {
     this.out = out;
   }
 
-  public boolean hadSecIssue() {
-    TestSecurityContext testSecurityContext = lookupContext();
-    return hadSecIssue(testSecurityContext);
-  }
-
   public Throwable securityIssue() {
     TestSecurityContext testSecurityContext = lookupContext();
     if (testSecurityContext == null) {
       return null;
     }
-    System.out.println("                                 "+ testSecurityContext.getFailures());
+    log("securityIssue", "                                 "+ testSecurityContext.getFailures());
     return testSecurityContext.getFailures().get(0);
   }
 
-  public void startTest(TestSecurityContext testSecurityContext) {
+  public void startTest(SomeTestSecurityContext testSecurityContext) {
     //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
     TestSecurityContext andSet = settingsRef.get();
     settingsRef.set(testSecurityContext);
@@ -123,7 +118,7 @@ public class JSecMgr extends SecurityManager {
     if (testSecurityContext == null) {
       return false;
     }
-    return testSecurityContext.threadGroup.activeCount() > 0;
+    return testSecurityContext.getThreadGroup().activeCount() > 0;
   }
 
   public boolean hadSecIssue(String className) {
@@ -167,7 +162,7 @@ public class JSecMgr extends SecurityManager {
   }
 
   private void log(String methodName, String msg) {
-    System.out.println("---" + methodName + ":" + msg);
+    System.err.println("---" + methodName + ":" + msg);
   }
 
   private boolean hadSecIssue(TestSecurityContext testSecurityContext) {
@@ -188,7 +183,7 @@ public class JSecMgr extends SecurityManager {
 
   public boolean anyHasDanglingThreads() {
     for (Map.Entry<String, TestSecurityContext> k : classNameToSettings.entrySet()) {
-      if (k.getValue().threadGroup.activeCount() > 0) {
+      if (k.getValue().getThreadGroup().activeCount() > 0) {
         return true;
       }
     }
@@ -199,13 +194,14 @@ public class JSecMgr extends SecurityManager {
     settingsRef.remove();
   }
 
-  public void withSettings(TestSecurityContext testSecurityContext, Runnable runnable) {
+  public void withSettings(SomeTestSecurityContext testSecurityContext, Runnable runnable) {
     startTest(testSecurityContext);
     runnable.run();
     endTest();
   }
 
-  public <V> V withSettings(TestSecurityContext context, Callable<V> callable) throws Exception {
+  public <V> V withSettings(SomeTestSecurityContext context, Callable<V> callable) throws Exception
+  {
     startTest(context);
     V result = callable.call();
     endTest();
@@ -278,23 +274,50 @@ public class JSecMgr extends SecurityManager {
     }
   }
 
+  public void interruptDanglingThreads() {
+  }
+
 
   public static class JSecMgrConfig {
 
     public final boolean useThreadGroup;
     public final boolean allowExit;
+    private final boolean allowDanglingThread;
 
-    JSecMgrConfig(boolean useThreadGroup, boolean allowExit) {
+    JSecMgrConfig(boolean useThreadGroup, boolean allowExit, boolean allowDanglingThread) {
       this.useThreadGroup = useThreadGroup;
       this.allowExit = allowExit;
+      this.allowDanglingThread = allowDanglingThread;
     }
 
     public boolean disallowSystemExit() {
       return !allowExit;
     }
+
+    public boolean disallowDanglingThread() {
+      return !allowDanglingThread;
+    }
   }
 
-  public static class TestSecurityContext {
+  public static class SuiteTestSecurityContext implements TestSecurityContext {
+
+    @Override
+    public void addFailure(Exception ex) {
+
+    }
+
+    @Override
+    public List<Exception> getFailures() {
+      return null;
+    }
+
+    @Override
+    public ThreadGroup getThreadGroup() {
+      return null;
+    }
+  }
+
+  public static class SomeTestSecurityContext implements TestSecurityContext {
 
     private String className;
     private ThreadGroup threadGroup;
@@ -302,20 +325,22 @@ public class JSecMgr extends SecurityManager {
     private Exception failureException;
 
 
-    public TestSecurityContext(String className, String methodName) {
+    public SomeTestSecurityContext(String className, String methodName) {
       this.className = className;
       this.threadGroup = new ThreadGroup(className + "-m-" + methodName + "-Threads");
       this.methodName = methodName;
     }
 
-    ThreadGroup getThreadGroup() {
+    public ThreadGroup getThreadGroup() {
       return threadGroup;
     }
 
+    @Override
     public void addFailure(Exception ex) {
       failureException = ex;
     }
 
+    @Override
     public List<Exception> getFailures() {
       if (failureException == null) {
         return Collections.emptyList();
@@ -336,4 +361,17 @@ public class JSecMgr extends SecurityManager {
     }
   }
 
+  /**
+   * Created by nhoward on 12/19/16.
+   */
+  public static interface TestSecurityContext {
+    void addFailure(Exception ex);
+
+    List<Exception> getFailures();
+
+    @Override
+    String toString();
+
+    ThreadGroup getThreadGroup();
+  }
 }
