@@ -37,6 +37,7 @@ class GatherSources(Task):
   @classmethod
   def prepare(cls, options, round_manager):
     round_manager.require_data(PythonInterpreter)
+    round_manager.require_data('python')  # For codegen.
 
   def execute(self):
     targets = self.context.targets(lambda tgt: isinstance(tgt, (PythonTarget, Resources)))
@@ -50,13 +51,13 @@ class GatherSources(Task):
       else:
         target_set_id = 'no_targets'
 
-      path = os.path.join(self.workdir, target_set_id)
-      path_tmp = path + '.tmp'
-
-      shutil.rmtree(path_tmp, ignore_errors=True)
-
       interpreter = self.context.products.get_data(PythonInterpreter)
+      path = os.path.join(self.workdir, target_set_id)
+
+      # Note that we check for the existence of the directory, instead of for invalid_vts, to cover the empty case.
       if not os.path.isdir(path):
+        path_tmp = path + '.tmp'
+        shutil.rmtree(path_tmp, ignore_errors=True)
         self._build_pex(interpreter, path_tmp, invalidation_check.all_vts)
         shutil.move(path_tmp, path)
 

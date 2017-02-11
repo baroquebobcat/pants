@@ -13,6 +13,11 @@ from pants.backend.python.targets.python_binary import PythonBinary
 from pants.backend.python.targets.python_library import PythonLibrary
 from pants.backend.python.targets.python_requirement_library import PythonRequirementLibrary
 from pants.backend.python.targets.python_tests import PythonTests
+from pants.backend.python.tasks2.gather_sources import GatherSources
+from pants.backend.python.tasks2.python_repl import PythonRepl as PythonRepl2
+from pants.backend.python.tasks2.python_run import PythonRun as PythonRun2
+from pants.backend.python.tasks2.resolve_requirements import ResolveRequirements
+from pants.backend.python.tasks2.select_interpreter import SelectInterpreter
 from pants.backend.python.tasks.pytest_run import PytestRun
 from pants.backend.python.tasks.python_binary_create import PythonBinaryCreate
 from pants.backend.python.tasks.python_isort import IsortPythonTask
@@ -52,3 +57,9 @@ def register_goals():
   task(name='py', action=PythonRepl).install('repl')
   task(name='setup-py', action=SetupPy).install()
   task(name='isort', action=IsortPythonTask).install('fmt')
+
+  task(name='interpreter', action=SelectInterpreter).install('pyprep')
+  task(name='requirements', action=ResolveRequirements).install('pyprep')
+  task(name='sources', action=GatherSources).install('pyprep')
+  task(name='py', action=PythonRun2).install('run2')
+  task(name='py', action=PythonRepl2).install('repl2')

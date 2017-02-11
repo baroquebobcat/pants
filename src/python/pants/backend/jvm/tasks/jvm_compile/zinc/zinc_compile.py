@@ -56,6 +56,8 @@ class BaseZincCompile(JvmCompile):
 
   _supports_concurrent_execution = True
 
+  _name = 'zinc'
+
   @staticmethod
   def _write_scalac_plugin_info(resources_dir, scalac_plugin_target):
     scalac_plugin_info_file = os.path.join(resources_dir, _SCALAC_PLUGIN_INFO_FILE)
@@ -158,7 +160,7 @@ class BaseZincCompile(JvmCompile):
     register('--name-hashing', advanced=True, type=bool, fingerprint=True,
              removal_hint='Name hashing is required for operation in zinc 1.0.0-X: this '
                           'option no longer has any effect.',
-             removal_version='1.4.0',
+             removal_version='1.4.0.dev0',
              help='Use zinc name hashing.')
     register('--whitelisted-args', advanced=True, type=dict,
              default={
@@ -381,7 +383,7 @@ class BaseZincCompile(JvmCompile):
                     main=self._ZINC_MAIN,
                     jvm_options=jvm_options,
                     args=zinc_args,
-                    workunit_name='zinc',
+                    workunit_name=self.name(),
                     workunit_labels=[WorkUnitLabel.COMPILER]):
       raise TaskError('Zinc compile failed.')
 
@@ -410,8 +412,6 @@ class BaseZincCompile(JvmCompile):
 
 class ZincCompile(BaseZincCompile):
   """Compile Scala and Java code using Zinc."""
-
-  _name = 'zinc'
 
   @classmethod
   def register_options(cls, register):

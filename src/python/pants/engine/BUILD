@@ -24,6 +24,7 @@ python_library(
   dependencies=[
     '3rdparty/python:six',
     ':objects',
+    'src/python/pants/build_graph',
     'src/python/pants/util:memo',
     'src/python/pants/util:meta',
     'src/python/pants/util:objects',
@@ -55,6 +56,7 @@ python_library(
   sources=['fs.py'],
   dependencies=[
     '3rdparty/python/twitter/commons:twitter.common.collections',
+    ':selectors',
     'src/python/pants/base:project_tree',
     'src/python/pants/source',
     'src/python/pants/util:meta',
@@ -130,6 +132,7 @@ python_library(
   sources=['parser.py'],
   dependencies=[
     '3rdparty/python:six',
+    ':addressable',
     ':objects',
     'src/python/pants/build_graph',
     'src/python/pants/util:memo',
@@ -187,7 +190,7 @@ python_library(
     '3rdparty/python:lmdb',
     ':nodes',
     ':objects',
-    ':scheduler',
     'src/python/pants/util:dirutil',
+    'src/python/pants/util:meta',
   ]
 )

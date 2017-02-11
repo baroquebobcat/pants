@@ -13,7 +13,7 @@ from contextlib import contextmanager
 
 from pants.base.specs import (AscendantAddresses, DescendantAddresses, SiblingAddresses,
                               SingleAddress)
-from pants.build_graph.address import Address
+from pants.build_graph.address import Address, BuildFileAddress
 from pants.engine.addressable import SubclassesOf
 from pants.engine.fs import PathGlobs, create_fs_intrinsics, generate_fs_subjects
 from pants.engine.isolated_process import create_snapshot_intrinsics, create_snapshot_singletons
@@ -22,11 +22,7 @@ from pants.engine.rules import RuleIndex, RulesetValidator
 from pants.engine.selectors import (Select, SelectDependencies, SelectLiteral, SelectProjection,
                                     SelectVariant, constraint_for)
 from pants.engine.struct import HasProducts, Variants
-from pants.engine.subsystem.native import (ExternContext, Function, TypeConstraint, TypeId,
-                                           extern_create_exception, extern_id_to_str,
-                                           extern_invoke_runnable, extern_key_for, extern_project,
-                                           extern_project_multi, extern_satisfied_by, extern_store_list,
-                                           extern_val_to_str)
+from pants.engine.subsystem.native import Function, TypeConstraint, TypeId
 from pants.util.contextutil import temporary_file_path
 from pants.util.objects import datatype
 
@@ -70,74 +66,69 @@ class LocalScheduler(object):
     self._product_graph_lock = graph_lock or threading.RLock()
     self._run_count = 0
 
-    # Create a handle for the ExternContext (which must be kept alive as long as this object), and
-    # the native Scheduler.
-    self._context = ExternContext()
-    self._context_handle = native.new_handle(self._context)
-
     # TODO: The only (?) case where we use inheritance rather than exact type unions.
-    has_products_constraint = TypeConstraint(self._to_id(SubclassesOf(HasProducts)))
+    has_products_constraint = SubclassesOf(HasProducts)
 
-    scheduler = native.lib.scheduler_create(self._context_handle,
-                                            extern_key_for,
-                                            extern_id_to_str,
-                                            extern_val_to_str,
-                                            extern_satisfied_by,
-                                            extern_store_list,
-                                            extern_project,
-                                            extern_project_multi,
-                                            extern_create_exception,
-                                            extern_invoke_runnable,
-                                            self._to_key('name'),
-                                            self._to_key('products'),
-                                            self._to_key('default'),
-                                            self._to_constraint(Address),
-                                            has_products_constraint,
-                                            self._to_constraint(Variants))
-    self._scheduler = native.gc(scheduler, native.lib.scheduler_destroy)
+    # Create the ExternContext, and the native Scheduler.
+    self._scheduler = native.new_scheduler(has_products_constraint,
+                                           constraint_for(Address),
+                                           constraint_for(Variants))
     self._execution_request = None
 
     # Validate and register all provided and intrinsic tasks.
-    select_product = lambda product: Select(product)
     # TODO: This bounding of input Subject types allows for closed-world validation, but is not
     # strictly necessary for execution. We might eventually be able to remove it by only executing
     # validation below the execution roots (and thus not considering paths that aren't in use).
-    root_selector_fns = {
-      Address: select_product,
-      AscendantAddresses: select_product,
-      DescendantAddresses: select_product,
-      PathGlobs: select_product,
-      SiblingAddresses: select_product,
-      SingleAddress: select_product,
+
+    root_subject_types = {
+      Address,
+      BuildFileAddress,
+      AscendantAddresses,
+      DescendantAddresses,
+      PathGlobs,
+      SiblingAddresses,
+      SingleAddress,
     }
     intrinsics = create_fs_intrinsics(project_tree) + create_snapshot_intrinsics(project_tree)
     singletons = create_snapshot_singletons(project_tree)
     rule_index = RuleIndex.create(tasks, intrinsics, singletons)
-    RulesetValidator(rule_index, goals, root_selector_fns).validate()
+
     self._register_tasks(rule_index.tasks)
     self._register_intrinsics(rule_index.intrinsics)
     self._register_singletons(rule_index.singletons)
 
+    self._validate_ruleset(root_subject_types)
+
+    RulesetValidator(rule_index, goals, root_subject_types).validate()
+
+  def _validate_ruleset(self, root_subject_types):
+    listed = list(TypeId(self._to_id(t)) for t in root_subject_types)
+
+    self._native.lib.validator_run(self._scheduler, listed, len(listed))
+
   def _to_value(self, obj):
-    return self._context.to_value(obj)
+    return self._native.context.to_value(obj)
 
   def _from_value(self, val):
-    return self._context.from_value(val)
+    return self._native.context.from_value(val)
 
   def _to_id(self, typ):
-    return self._context.to_id(typ)
+    return self._native.context.to_id(typ)
 
   def _to_key(self, obj):
-    return self._context.to_key(obj)
+    return self._native.context.to_key(obj)
 
   def _from_id(self, cdata):
-    return self._context.from_id(cdata)
+    return self._native.context.from_id(cdata)
 
   def _from_key(self, cdata):
-    return self._context.from_key(cdata)
+    return self._native.context.from_key(cdata)
 
   def _to_constraint(self, type_or_constraint):
     return TypeConstraint(self._to_id(constraint_for(type_or_constraint)))
+
+  def _to_ids_buf(self, types):
+    return self._native.context.type_ids_buf([TypeId(self._to_id(t)) for t in types])
 
   def _register_singletons(self, singletons):
     """Register the given singletons dict.
@@ -186,9 +177,10 @@ class LocalScheduler(object):
             self._native.lib.task_add_select(self._scheduler,
                                              product_constraint)
           elif selector_type is SelectVariant:
+            key_buf = self._native.context.utf8_buf(selector.variant_key)
             self._native.lib.task_add_select_variant(self._scheduler,
                                                      product_constraint,
-                                                     self._context.utf8_buf(selector.variant_key))
+                                                     key_buf)
           elif selector_type is SelectLiteral:
             # NB: Intentionally ignores subject parameter to provide a literal subject.
             self._native.lib.task_add_select_literal(self._scheduler,
@@ -199,6 +191,7 @@ class LocalScheduler(object):
                                                           product_constraint,
                                                           self._to_constraint(selector.dep_product),
                                                           self._to_key(selector.field),
+                                                          self._to_ids_buf(selector.field_types),
                                                           selector.transitive)
           elif selector_type is SelectProjection:
             if len(selector.fields) != 1:
@@ -290,16 +283,16 @@ class LocalScheduler(object):
                                   self._native.lib.nodes_destroy)
       roots = {}
       for root, raw_root in zip(execution_request.roots, self._native.unpack(raw_roots.nodes_ptr, raw_roots.nodes_len)):
-        if raw_root.union_tag is 0:
+        if raw_root.state_tag is 0:
           state = None
-        elif raw_root.union_tag is 1:
-          state = Return(self._from_value(raw_root.union_return))
-        elif raw_root.union_tag is 2:
-          state = Throw(self._from_value(raw_root.union_throw))
-        elif raw_root.union_tag is 3:
-          state = Throw(Exception("Nooped"))
+        elif raw_root.state_tag is 1:
+          state = Return(self._from_value(raw_root.state_value))
+        elif raw_root.state_tag is 2:
+          state = Throw(self._from_value(raw_root.state_value))
+        elif raw_root.state_tag is 3:
+          state = Throw(self._from_value(raw_root.state_value))
         else:
-          raise ValueError('Unrecognized State type `{}` on: {}'.format(raw_root.union_tag, raw_root))
+          raise ValueError('Unrecognized State type `{}` on: {}'.format(raw_root.state_tag, raw_root))
         roots[root] = state
       return roots
 
@@ -333,6 +326,7 @@ class LocalScheduler(object):
                                                                 self._to_constraint(selector.product),
                                                                 self._to_constraint(selector.dep_product),
                                                                 self._to_key(selector.field),
+                                                                self._to_ids_buf(selector.field_types),
                                                                 selector.transitive)
       else:
         raise ValueError('Unsupported root selector type: {}'.format(selector))

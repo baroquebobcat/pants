@@ -51,6 +51,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Ity Kaul
 + Jackson Davis
 + Jake Donham
++ James Bench
 + James Mouradian
 + Jason Jackson
 + Jeff Jenkins
@@ -73,6 +74,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Justin Trobec
 + Karin Lundberg
 + Ken Kawamoto
++ Kevin Oliver
 + Kevin Sweeney
 + Kris Wilson
 + Kushal Dave
@@ -104,6 +106,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Nick Howard
 + Nik Shkrob
 + Nitay Joffe
++ Ny Saechao
 + Oliver Gould
 + Patrick Lawson
 + Paul Groudas

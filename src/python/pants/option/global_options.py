@@ -64,7 +64,14 @@ class GlobalOptionsRegistrar(Optionable):
              default=['pants.backend.graph_info',
                       'pants.backend.python',
                       'pants.backend.jvm',
-                      'pants.backend.codegen',
+                      'pants.backend.codegen.antlr.java',
+                      'pants.backend.codegen.antlr.python',
+                      'pants.backend.codegen.jaxb',
+                      'pants.backend.codegen.protobuf.java',
+                      'pants.backend.codegen.ragel.java',
+                      'pants.backend.codegen.thrift.java',
+                      'pants.backend.codegen.thrift.python',
+                      'pants.backend.codegen.wire.java',
                       'pants.backend.project_info'],
              help='Load backends from these packages that are already on the path. '
                   'Add contrib and custom backends to this list.')
@@ -159,7 +166,7 @@ class GlobalOptionsRegistrar(Optionable):
     rel_distdir = '/{}/'.format(os.path.relpath(register.bootstrap.pants_distdir, get_buildroot()))
     register('--ignore-patterns', advanced=True, type=list, fromfile=True,
              default=['.*', rel_distdir, 'bower_components', 'node_modules', '*.egg-info'],
-             removal_version='1.3.0', removal_hint='Use --build-ignore instead.',
+             removal_version='1.3.0.dev0', removal_hint='Use --build-ignore instead.',
              mutually_exclusive_group='build_ignore', help='See help for --build-ignore.')
     register('--build-ignore', advanced=True, type=list, fromfile=True,
              default=['.*', rel_distdir, 'bower_components', 'node_modules', '*.egg-info'],

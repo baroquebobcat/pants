@@ -11,6 +11,7 @@ pub struct SelectDependencies {
   pub product: TypeConstraint,
   pub dep_product: TypeConstraint,
   pub field: Field,
+  pub field_types: Vec<TypeId>,
   pub transitive: bool,
 }
 
@@ -59,6 +60,7 @@ impl Selector {
     )
   }
 
+  // The product type this selector will ultimately produce.
   pub fn product(&self) -> &TypeConstraint {
     match self {
       &Selector::Select(ref s) => &s.product,

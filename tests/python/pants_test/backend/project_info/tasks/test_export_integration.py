@@ -70,8 +70,9 @@ class ExportIntegrationTest(ResolveJarsTestMixin, PantsRunIntegrationTest):
       thrift_target_name = ('examples.src.thrift.org.pantsbuild.example.precipitation'
                             '.precipitation-java')
       codegen_target_regex = os.path.join(os.path.relpath(workdir, get_buildroot()),
-                                          'gen/thrift/[^/]*/[^/:]*/[^/:]*:{0}'.format(thrift_target_name))
+                                          'gen/thrift-java/[^/]*/[^/:]*/[^/:]*:{0}'.format(thrift_target_name))
       p = re.compile(codegen_target_regex)
+      print(json_data.get('targets').keys())
       self.assertTrue(any(p.match(target) for target in json_data.get('targets').keys()))
 
   def test_export_json_transitive_jar(self):
@@ -148,7 +149,7 @@ class ExportIntegrationTest(ResolveJarsTestMixin, PantsRunIntegrationTest):
     with self.temporary_workdir() as workdir:
       test_target = 'examples/src/scala/org/pantsbuild/example/scala_with_java_sources'
       json_data = self.run_export(test_target, workdir, load_libs=True)
-      scala_lang_lib = json_data.get('libraries').get('org.scala-lang:scala-library:2.10.6')
+      scala_lang_lib = json_data.get('libraries').get('org.scala-lang:scala-library:2.11.8')
       self.assertIsNotNone(scala_lang_lib)
       self.assertIsNotNone(scala_lang_lib['default'])
       self.assertIsNotNone(scala_lang_lib['sources'])

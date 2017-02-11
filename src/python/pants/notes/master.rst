@@ -4,6 +4,175 @@ Master Pre-Releases
 This document describes ``dev`` releases which occur weekly from master, and which do
 not undergo the vetting associated with ``stable`` releases.
 
+1.3.0.dev9 (1/27/2017)
+----------------------
+
+Bugfixes
+~~~~~~~~
+
+* Removes the slf4j implementation from the classpath when running Cobertura (#4198)
+  `PR #4198 <https://github.com/pantsbuild/pants/pull/4198>`_
+
+* Make open_zip print realpath when raising BadZipfile. (#4186)
+  `PR #4186 <https://github.com/pantsbuild/pants/pull/4186>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Shard testprojects integration tests (#4205)
+  `PR #4205 <https://github.com/pantsbuild/pants/pull/4205>`_
+
+* Resolve only stable releases by default. (#4201)
+  `PR #4201 <https://github.com/pantsbuild/pants/pull/4201>`_
+
+
+1.3.0.dev8 (1/20/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Bump pex version to 1.1.20 (#4191)
+  `PR #4191 <https://github.com/pantsbuild/pants/pull/4191>`_
+
+* Ban some characters in target name (#4180)
+  `PR #4180 <https://github.com/pantsbuild/pants/pull/4180>`_
+
+New Features
+~~~~~~~~~~~~
+
+* Scrooge codegen improvements (#4177)
+  `PR #4177 <https://github.com/pantsbuild/pants/pull/4177>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Kill review tooling remnants. (#4192)
+  `PR #4192 <https://github.com/pantsbuild/pants/pull/4192>`_
+
+* Only release native-engine for pants releases. (#4189)
+  `PR #4189 <https://github.com/pantsbuild/pants/pull/4189>`_
+
+* Add some useful tips to the release documentation. (#4183)
+  `PR #4183 <https://github.com/pantsbuild/pants/pull/4183>`_
+
+Bugfixes
+~~~~~~~~
+
+* Add __init__.py for tests/python directories (#4193)
+  `PR #4193 <https://github.com/pantsbuild/pants/pull/4193>`_
+
+* Fix `str`-typed options with `int` defaults. (#4184)
+  `PR #4184 <https://github.com/pantsbuild/pants/pull/4184>`_
+
+
+1.3.0.dev7 (1/13/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Upgrade zinc and default scala-platform in pants repo to 2.11 (#4176)
+  `PR #4176 <https://github.com/pantsbuild/pants/pull/4176>`_
+
+New Features
+~~~~~~~~~~~~
+
+* Add contrib module for Error Prone http://errorprone.info/ (#4163)
+  `PR #4163 <https://github.com/pantsbuild/pants/pull/4163>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* add various codegen packages to default backend packages (#4175)
+  `PR #4175 <https://github.com/pantsbuild/pants/pull/4175>`_
+
+* Suggest missing dependencies from target's transitive dependencies (#4171)
+  `PR #4171 <https://github.com/pantsbuild/pants/pull/4171>`_
+
+* Reduce compilation invalidation scope of targets with strict_deps=True (#4143)
+  `PR #4143 <https://github.com/pantsbuild/pants/pull/4143>`_
+
+* Fork to post_stat (#4170)
+  `PR #4170 <https://github.com/pantsbuild/pants/pull/4170>`_
+
+Bugfixes
+~~~~~~~~
+
+* fix a small bug in ApacheThriftGenBase class (#4181)
+  `PR #4181 <https://github.com/pantsbuild/pants/pull/4181>`_
+
+
+1.3.0.dev6 (1/06/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Refactor the thrift codegen task. (#4155)
+  `PR #4155 <https://github.com/pantsbuild/pants/pull/4155>`_
+
+* Finish splitting up the codegen backend. (#4147)
+  `PR #4147 <https://github.com/pantsbuild/pants/pull/4147>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Fix import order issues introduced by a previous commit. (#4156)
+  `PR #4156 <https://github.com/pantsbuild/pants/pull/4156>`_
+
+* Bump default nodejs version to 6.9.1 from 6.2.0 (#4161)
+  `PR #4161 <https://github.com/pantsbuild/pants/pull/4161>`_
+
+* Make post_stat async (#4157)
+  `PR #4157 <https://github.com/pantsbuild/pants/pull/4157>`_
+
+* Fix release script owners check.
+  `Commit <https://github.com/pantsbuild/pants/commit/a40234429cc05f6483f91b08f10037429710b5b4>`_
+
+
+1.3.0.dev5 (12/30/2016)
+-----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Upgrade default go to 1.7.4. (#4149)
+  `PR #4149 <https://github.com/pantsbuild/pants/pull/4149>`_
+
+Bugfixes
+~~~~~~~~
+
+* Fix instructions for ivy debug logging (#4141)
+  `PR #4141 <https://github.com/pantsbuild/pants/pull/4141>`_
+
+* Handle unicode in classpath entries (#4136)
+  `PR #4136 <https://github.com/pantsbuild/pants/pull/4136>`_
+
+* Ensure that invalid vts have results_dir cleaned before passing to ta… (#4139)
+  `PR #4139 <https://github.com/pantsbuild/pants/pull/4139>`_
+
+Documentation
+~~~~~~~~~~~~~
+
+* [docs] Update the cache section on the Task developer page. (#4152)
+  `PR #4152 <https://github.com/pantsbuild/pants/pull/4152>`_
+
+* Prepare notes for 1.2.1.rc0 (#4146)
+  `PR #4146 <https://github.com/pantsbuild/pants/pull/4146>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Start breaking up the codegen backend. (#4147)
+  `PR #4147 <https://github.com/pantsbuild/pants/pull/4147>`_
+
+* Cleanup unused cffi handles to free memory (#4135)
+  `PR #4135 <https://github.com/pantsbuild/pants/pull/4135>`_
+
+* A new Python run task. (#4142)
+  `PR #4142 <https://github.com/pantsbuild/pants/pull/4142>`_
+
 1.3.0.dev4 (12/08/2016)
 -----------------------
 
