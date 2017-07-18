@@ -78,27 +78,35 @@ class Exiter(object):
     """
     self.exit(result=1, msg=msg)
 
-  def handle_unhandled_exception(self, exc_class=None, exc=None, tb=None, add_newline=False):
+  def handle_unhandled_exception(self, exc=None, tb=None, add_newline=False):
     """Default sys.excepthook implementation for unhandled exceptions."""
-    exc_class = exc_class or sys.exc_type
     exc = exc or sys.exc_value
     tb = tb or sys.exc_traceback
 
-    def format_msg(print_backtrace=True):
-      msg = 'Exception caught: ({})\n'.format(type(exc))
-      msg += '{}\n'.format(''.join(self._format_tb(tb))) if print_backtrace else '\n'
-      msg += 'Exception message: {}\n'.format(exc if str(exc) else 'none')
-      msg += '\n' if add_newline else ''
-      return msg
-
     # Always output the unhandled exception details into a log file.
-    self._log_exception(format_msg())
-    self.exit_and_fail(format_msg(self._should_print_backtrace))
+    logged_msg = self.error_message(exc, tb, include_traceback=True, add_newline=add_newline)
+    self._log_exception(logged_msg)
+    msg = self.error_message(
+      exc,
+      tb,
+      include_traceback=self._should_print_backtrace,
+      add_newline=add_newline)
+    self.exit_and_fail(msg)
+
+  def error_message(self, exc, tb, include_traceback=True, add_newline=False):
+    msg = 'Exception caught: ({})\n'.format(type(exc))
+    if include_traceback:
+      msg += '{}\n'.format(''.join(self._format_tb(tb)))
+    else:
+      msg += '  Run `./pants last-error` to see traceback.\n'
+    msg += 'Exception message: {}\n'.format(exc if str(exc) else 'none')
+    msg += '\n' if add_newline else ''
+    return msg
 
   def _log_exception(self, msg):
     if self._workdir:
       try:
-        output_path = os.path.join(self._workdir, 'logs', 'exceptions.log')
+        output_path = self.exception_log_path()
         with safe_open(output_path, 'a') as exception_log:
           exception_log.write('timestamp: {}\n'.format(datetime.datetime.now().isoformat()))
           exception_log.write('args: {}\n'.format(sys.argv))
@@ -109,6 +117,9 @@ class Exiter(object):
         # This is all error recovery logic so we catch all exceptions from the logic above because
         # we don't want to hide the original error.
         logger.error('Problem logging original exception: {}'.format(e))
+
+  def exception_log_path(self):
+    return os.path.join(self._workdir, 'logs', 'exceptions.log')
 
   def set_except_hook(self):
     """Sets the global exception hook."""

@@ -6,7 +6,10 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import os
+import sys
 import unittest
+
+from textwrap import dedent
 
 from pants.bin.exiter import Exiter
 from pants.util.contextutil import temporary_dir
@@ -34,3 +37,22 @@ class ExiterTest(unittest.TestCase):
         self.assertIn('args: [', args)
         self.assertIn('pid: {}'.format(os.getpid()), pid)
         self.assertIn('test-data', msg)
+
+  def test_exception_text(self):
+    with temporary_dir() as workdir:
+      exiter = Exiter()
+      exiter.apply_options(create_options({ '': {
+        'print_exception_stacktrace': False,
+        'pants_workdir': workdir}
+      }))
+      try:
+        raise Exception('some error')
+      except Exception as e:
+        msg = exiter.error_message(e, sys.exc_traceback, include_traceback=False)
+        self.assertEqual(dedent('''
+            Exception caught: (<type 'exceptions.Exception'>)
+              Run `./pants last-error` to see traceback.
+            Exception message: some error''').strip() + '\n',
+          msg)
+
+

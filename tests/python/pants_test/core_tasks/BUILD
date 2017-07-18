@@ -24,6 +24,19 @@ python_tests(
 )
 
 python_tests(
+  name = 'last_error',
+  sources = ['test_last_error.py'],
+  dependencies = [
+    'src/python/pants/core_tasks',
+    'src/python/pants/goal',
+    'src/python/pants/goal:task_registrar',
+    'src/python/pants/task',
+    'tests/python/pants_test/tasks:task_test_base',
+    'tests/python/pants_test:int-test',
+  ],
+)
+
+python_tests(
   name = 'list_goals',
   sources = ['test_list_goals.py'],
   dependencies = [

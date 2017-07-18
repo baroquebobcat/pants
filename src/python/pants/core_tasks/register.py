@@ -11,6 +11,7 @@ from pants.core_tasks.clean import Clean
 from pants.core_tasks.deferred_sources_mapper import DeferredSourcesMapper
 from pants.core_tasks.explain_options_task import ExplainOptionsTask
 from pants.core_tasks.invalidate import Invalidate
+from pants.core_tasks.last_error import LastError
 from pants.core_tasks.list_goals import ListGoals
 from pants.core_tasks.noop import NoopCompile, NoopTest
 from pants.core_tasks.pantsd_kill import PantsDaemonKill
@@ -98,3 +99,5 @@ def register_goals():
   # Processing aliased targets has to occur very early.
   task(name='substitute-aliased-targets', action=SubstituteAliasedTargets).install('bootstrap',
                                                                                    first=True)
+
+  task(name='last-error', action=LastError).install()
