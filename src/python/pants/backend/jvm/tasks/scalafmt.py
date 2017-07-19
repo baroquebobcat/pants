@@ -7,9 +7,9 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 from abc import abstractproperty
 
-from pants.backend.jvm.targets.jar_dependency import JarDependency
 from pants.backend.jvm.tasks.nailgun_task import NailgunTask
 from pants.base.exceptions import TaskError
+from pants.java.jar.jar_dependency import JarDependency
 from pants.option.custom_types import file_option
 from pants.util.memo import memoized_property
 from pants.util.meta import AbstractClass
@@ -33,9 +33,9 @@ class ScalaFmt(NailgunTask, AbstractClass):
     register('--configuration', advanced=True, type=file_option, fingerprint=False,
               help='Path to scalafmt config file, if not specified default scalafmt config used')
     register('--target-types',
-             default={'scala_library', 'junit_tests', 'java_tests'},
+             default=['scala_library', 'junit_tests', 'java_tests'],
              advanced=True,
-             type=set,
+             type=list,
              help='The target types to apply formatting to.')
     cls.register_jvm_tool(register,
                           'scalafmt',
@@ -47,7 +47,7 @@ class ScalaFmt(NailgunTask, AbstractClass):
 
   @memoized_property
   def _formatted_target_types(self):
-    aliases = self.get_options().target_types
+    aliases = set(self.get_options().target_types)
     registered_aliases = self.context.build_file_parser.registered_aliases()
     return tuple({target_type
                   for alias in aliases
@@ -112,6 +112,8 @@ class ScalaFmtCheckFormat(ScalaFmt):
 
   :API: public
   """
+  deprecated_options_scope = 'compile.scalafmt'
+  deprecated_options_scope_removal_version = '1.5.0.dev0'
 
   def get_command_args(self, files):
     # If no config file is specified use default scalafmt config.

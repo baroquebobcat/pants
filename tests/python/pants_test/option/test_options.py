@@ -16,7 +16,7 @@ from textwrap import dedent
 from pants.base.deprecated import CodeRemovedError
 from pants.option.arg_splitter import GLOBAL_SCOPE
 from pants.option.config import Config
-from pants.option.custom_types import file_option, target_option
+from pants.option.custom_types import UnsetBool, file_option, target_option
 from pants.option.errors import (BooleanOptionNameWithNo, FrozenRegistration, ImplicitValIsNone,
                                  InvalidKwarg, InvalidMemberType, MemberTypeNotAllowed,
                                  NoOptionNames, OptionAlreadyRegistered, OptionNameDash,
@@ -76,6 +76,7 @@ class OptionsTest(unittest.TestCase):
     register_global('--store-true-def-false-flag', type=bool, default=False)
     register_global('--store-false-def-false-flag', type=bool, implicit_value=False, default=False)
     register_global('--store-false-def-true-flag', type=bool, implicit_value=False, default=True)
+    register_global('--def-unset-bool-flag', type=bool, default=UnsetBool)
 
     # Choices.
     register_global('--str-choices', choices=['foo', 'bar'])
@@ -281,11 +282,13 @@ class OptionsTest(unittest.TestCase):
     self.assertTrue(options.for_global_scope().store_true_def_true_flag)
     self.assertFalse(options.for_global_scope().store_false_def_false_flag)
     self.assertTrue(options.for_global_scope().store_false_def_true_flag)
+    self.assertIsNone(options.for_global_scope().def_unset_bool_flag)
 
   def test_boolean_set_option(self):
     options = self._parse('./pants --store-true-flag --store-false-flag '
                           ' --store-true-def-true-flag --store-true-def-false-flag '
-                          ' --store-false-def-true-flag --store-false-def-false-flag')
+                          ' --store-false-def-true-flag --store-false-def-false-flag '
+                          ' --def-unset-bool-flag')
 
     self.assertTrue(options.for_global_scope().store_true_flag)
     self.assertFalse(options.for_global_scope().store_false_flag)
@@ -293,17 +296,20 @@ class OptionsTest(unittest.TestCase):
     self.assertTrue(options.for_global_scope().store_true_def_true_flag)
     self.assertFalse(options.for_global_scope().store_false_def_false_flag)
     self.assertFalse(options.for_global_scope().store_false_def_true_flag)
+    self.assertTrue(options.for_global_scope().def_unset_bool_flag)
 
   def test_boolean_negate_option(self):
     options = self._parse('./pants --no-store-true-flag --no-store-false-flag '
                           ' --no-store-true-def-true-flag --no-store-true-def-false-flag '
-                          ' --no-store-false-def-true-flag --no-store-false-def-false-flag')
+                          ' --no-store-false-def-true-flag --no-store-false-def-false-flag '
+                          ' --no-def-unset-bool-flag')
     self.assertFalse(options.for_global_scope().store_true_flag)
     self.assertTrue(options.for_global_scope().store_false_flag)
     self.assertFalse(options.for_global_scope().store_true_def_false_flag)
     self.assertFalse(options.for_global_scope().store_true_def_true_flag)
     self.assertTrue(options.for_global_scope().store_false_def_false_flag)
     self.assertTrue(options.for_global_scope().store_false_def_true_flag)
+    self.assertFalse(options.for_global_scope().def_unset_bool_flag)
 
   def test_boolean_config_override_true(self):
     options = self._parse('./pants', config={'DEFAULT': {'store_true_flag': True,
@@ -312,6 +318,7 @@ class OptionsTest(unittest.TestCase):
                                                          'store_true_def_false_flag': True,
                                                          'store_false_def_true_flag': True,
                                                          'store_false_def_false_flag': True,
+                                                         'def_unset_bool_flag': True,
                                                          }})
     self.assertTrue(options.for_global_scope().store_true_flag)
     self.assertTrue(options.for_global_scope().store_false_flag)
@@ -319,6 +326,7 @@ class OptionsTest(unittest.TestCase):
     self.assertTrue(options.for_global_scope().store_true_def_true_flag)
     self.assertTrue(options.for_global_scope().store_false_def_false_flag)
     self.assertTrue(options.for_global_scope().store_false_def_true_flag)
+    self.assertTrue(options.for_global_scope().def_unset_bool_flag)
 
   def test_boolean_config_override_false(self):
     options = self._parse('./pants', config={'DEFAULT': {'store_true_flag': False,
@@ -327,6 +335,7 @@ class OptionsTest(unittest.TestCase):
                                                          'store_true_def_false_flag': False,
                                                          'store_false_def_true_flag': False,
                                                          'store_false_def_false_flag': False,
+                                                         'def_unset_bool_flag': False,
                                                          }})
     self.assertFalse(options.for_global_scope().store_true_flag)
     self.assertFalse(options.for_global_scope().store_false_flag)
@@ -334,6 +343,7 @@ class OptionsTest(unittest.TestCase):
     self.assertFalse(options.for_global_scope().store_true_def_true_flag)
     self.assertFalse(options.for_global_scope().store_false_def_false_flag)
     self.assertFalse(options.for_global_scope().store_false_def_true_flag)
+    self.assertFalse(options.for_global_scope().def_unset_bool_flag)
 
   def test_boolean_invalid_value(self):
     with self.assertRaises(Parser.BooleanConversionError):
@@ -959,11 +969,7 @@ class OptionsTest(unittest.TestCase):
                           })
     self.assertEquals(100, options.for_global_scope().a)
     self.assertEquals(99, options.for_scope('compile').a)
-
-    # TODO(John Sirois): This should pick up 99 from the the recursive global '--a' flag defined in
-    # middle scope 'compile', but instead it picks up `a`'s value from the config DEFAULT section.
-    # Fix this test as part of https://github.com/pantsbuild/pants/issues/1803.
-    self.assertEquals(100, options.for_scope('compile.java').a)
+    self.assertEquals(99, options.for_scope('compile.java').a)
 
     options = self._parse('./pants',
                           env={
@@ -1038,16 +1044,28 @@ class OptionsTest(unittest.TestCase):
                        intermediate('qux'), task('qux.quux')},
                       Options.complete_scopes({task('foo.bar.baz'), task('qux.quux')}))
 
-  def test_get_fingerprintable_for_scope(self):
+  def test_get_fingerprintable_for_scope_ignore_passthru(self):
     # Note: tests handling recursive and non-recursive options from enclosing scopes correctly.
     options = self._parse('./pants --store-true-flag --num=88 compile.scala --num=77 '
-                          '--modifycompile="blah blah blah" --modifylogs="durrrr"')
+                          '--modifycompile="blah blah blah" --modifylogs="durrrr" -- -d -v')
 
     pairs = options.get_fingerprintable_for_scope('compile.scala')
-    self.assertEquals(len(pairs), 3)
-    self.assertEquals((str, 'blah blah blah'), pairs[0])
-    self.assertEquals((bool, True), pairs[1])
-    self.assertEquals((int, 77), pairs[2])
+    self.assertEquals([(str, 'blah blah blah'),
+                       (bool, True),
+                       (int, 77)],
+                      pairs)
+
+  def test_get_fingerprintable_for_scope_include_passthru(self):
+    options = self._parse('./pants --store-true-flag --num=88 compile.scala --num=77 '
+                          '--modifycompile="blah blah blah" --modifylogs="durrrr" -- -d -v')
+
+    pairs = options.get_fingerprintable_for_scope('compile.scala', include_passthru=True)
+    self.assertEquals([(str, '-d'),
+                       (str, '-v'),
+                       (str, 'blah blah blah'),
+                       (bool, True),
+                       (int, 77)],
+                      pairs)
 
   def assert_fromfile(self, parse_func, expected_append=None, append_contents=None):
     def _do_assert_fromfile(dest, expected, contents):
@@ -1246,3 +1264,35 @@ class OptionsTest(unittest.TestCase):
 
     # Check values.
     self.assertEquals('uu', vals2.qux)
+
+  def test_scope_deprecation_defaults(self):
+    # Confirms that a DEFAULT option does not trigger deprecation warnings for a deprecated scope.
+    class DummyOptionable1(Optionable):
+      options_scope = 'new-scope1'
+      options_scope_category = ScopeInfo.SUBSYSTEM
+      deprecated_options_scope = 'deprecated-scope'
+      deprecated_options_scope_removal_version = '9999.9.9.dev0'
+
+    options = Options.create(env={},
+                             config=self._create_config({
+                               'DEFAULT': {
+                                 'foo': 'aa'
+                               },
+                               DummyOptionable1.options_scope: {
+                                 'foo': 'xx'
+                               },
+                             }),
+                             known_scope_infos=[
+                               DummyOptionable1.get_scope_info(),
+                             ],
+                             args=shlex.split('./pants'),
+                             option_tracker=OptionTracker())
+
+    options.register(DummyOptionable1.options_scope, '--foo')
+
+    with self.warnings_catcher() as w:
+      vals1 = options.for_scope(DummyOptionable1.options_scope)
+
+    # Check that we got no warnings and that the actual scope took precedence.
+    self.assertEquals(0, len(w))
+    self.assertEquals('xx', vals1.foo)

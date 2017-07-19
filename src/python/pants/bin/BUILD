@@ -2,13 +2,9 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 python_library(
-  sources=globs('*.py', exclude=['options_initializer.py',
-                                 'extension_loader.py',
-                                 'plugin_resolver.py']),
   dependencies=[
     '3rdparty/python/twitter/commons:twitter.common.collections',
     '3rdparty/python:setproctitle',
-    ':options_initializer',
     'src/python/pants/backend/jvm/tasks:nailgun_task',
     'src/python/pants/base:build_environment',
     'src/python/pants/base:build_file',
@@ -24,7 +20,6 @@ python_library(
     'src/python/pants/engine/legacy:parser',
     'src/python/pants/engine/subsystem:native',
     'src/python/pants/engine:build_files',
-    'src/python/pants/engine:engine',
     'src/python/pants/engine:fs',
     'src/python/pants/engine:legacy_engine',
     'src/python/pants/engine:mapper',
@@ -35,8 +30,8 @@ python_library(
     'src/python/pants/goal:context',
     'src/python/pants/goal:run_tracker',
     'src/python/pants/help',
+    'src/python/pants/init',
     'src/python/pants/option',
-    'src/python/pants/pantsd/subsystem:pants_daemon_launcher',
     'src/python/pants/reporting',
     'src/python/pants/scm/subsystems:changed',
     'src/python/pants/subsystem',
@@ -48,69 +43,13 @@ python_library(
   ],
 )
 
-python_library(
-  name='extension_loader',
-  sources=['extension_loader.py'],
-  dependencies=[
-    '3rdparty/python:setuptools',
-    '3rdparty/python/twitter/commons:twitter.common.collections',
-    'src/python/pants/base:exceptions',
-    'src/python/pants/build_graph:build_graph',
-    ':plugins',
-  ]
-)
-
-python_library(
-  name='plugin_resolver',
-  sources=['plugin_resolver.py'],
-  dependencies=[
-    '3rdparty/python:pex',
-    '3rdparty/python:setuptools',
-    'src/python/pants/backend/python:python_setup',
-    'src/python/pants/option:option',
-    'src/python/pants/subsystem:subsystem',
-    'src/python/pants/util:dirutil',
-    'src/python/pants/util:memo',
-    'src/python/pants:version',
-  ]
-)
-
-python_library(
-  name='options_initializer',
-  sources=['options_initializer.py'],
-  dependencies=[
-    '3rdparty/python:setuptools',
-    ':extension_loader',
-    ':plugin_resolver',
-    'src/python/pants/base:build_environment',
-    'src/python/pants/base:exceptions',
-    'src/python/pants/engine/legacy:change_calculator',
-    'src/python/pants/goal:goal',
-    'src/python/pants/logging:logging',
-    'src/python/pants/option:option',
-    'src/python/pants/subsystem:subsystem',
-  ]
-)
-
-target(
-  name='plugins',
-  dependencies=[
-    'src/python/pants/backend/codegen:plugin',
-    'src/python/pants/backend/docgen:plugin',
-    'src/python/pants/backend/graph_info:plugin',
-    'src/python/pants/backend/jvm:plugin',
-    'src/python/pants/backend/project_info:plugin',
-    'src/python/pants/backend/python:plugin',
-  ],
-)
-
 # This binary's entry_point is used by the pantsbuild.pants sdist to setup a binary for
 # pip installers, ie: it is why this works to get `pants` on your PATH:
 # $ pip install pantsbuild.pants
 # $ pants
 python_binary(
   name='pants',
-  entry_point='pants.bin.pants_exe:main',
+  entry_point='pants.bin.pants_loader:main',
   dependencies=[
     ':bin',
   ],
@@ -121,7 +60,7 @@ python_binary(
 # separate sdists from the core `pantsbuild.pants` sdist that this repo uses.
 python_binary(
   name='pants_local_binary',
-  entry_point='pants.bin.pants_exe:main',
+  entry_point='pants.bin.pants_loader:main',
   dependencies=[
     ':bin',
     'contrib/python/src/python/pants/contrib/python/checks/tasks/checkstyle:all',

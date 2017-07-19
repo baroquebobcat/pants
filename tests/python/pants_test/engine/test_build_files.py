@@ -11,8 +11,8 @@ import unittest
 from pants.build_graph.address import Address
 from pants.engine.addressable import (Exactly, SubclassesOf, addressable, addressable_dict,
                                       addressable_list)
-from pants.engine.build_files import ResolvedTypeMismatchError, create_graph_tasks
-from pants.engine.engine import LocalSerialEngine
+from pants.engine.build_files import ResolvedTypeMismatchError, create_graph_rules
+from pants.engine.fs import create_fs_rules
 from pants.engine.mapper import AddressMapper, ResolveError
 from pants.engine.nodes import Return, Throw
 from pants.engine.parser import SymbolTable
@@ -99,9 +99,9 @@ class GraphTestBase(unittest.TestCase, SchedulerTestBase):
                                    build_patterns=build_patterns,
                                    parser_cls=parser_cls)
 
-    tasks = create_graph_tasks(address_mapper, symbol_table_cls)
+    rules = create_fs_rules() + create_graph_rules(address_mapper, symbol_table_cls)
     project_tree = self.mk_fs_tree(os.path.join(os.path.dirname(__file__), 'examples'))
-    scheduler = self.mk_scheduler(tasks=tasks, project_tree=project_tree)
+    scheduler = self.mk_scheduler(rules=rules, project_tree=project_tree)
     return scheduler
 
   def create_json(self):
@@ -110,8 +110,7 @@ class GraphTestBase(unittest.TestCase, SchedulerTestBase):
   def _populate(self, scheduler, address):
     """Perform an ExecutionRequest to parse the given Address into a Struct."""
     request = scheduler.execution_request([TestTable.constraint()], [address])
-    LocalSerialEngine(scheduler).reduce(request)
-    root_entries = scheduler.root_entries(request).items()
+    root_entries = scheduler.execute(request).root_products
     self.assertEquals(1, len(root_entries))
     return root_entries[0]
 
@@ -205,7 +204,7 @@ class InlinedGraphTest(GraphTestBase):
   def do_test_cycle(self, address_str):
     scheduler = self.create_json()
     parsed_address = Address.parse(address_str)
-    self.do_test_trace_message(scheduler, parsed_address, 'cycle')
+    self.do_test_trace_message(scheduler, parsed_address, 'Dep graph contained a cycle.')
 
   def assert_throws_are_leaves(self, error_msg, throw_name):
     def indent_of(s):
@@ -222,10 +221,8 @@ class InlinedGraphTest(GraphTestBase):
       # Make sure lines with Throw have more or equal indentation than its neighbors.
       current_line = lines[idx]
       line_above = lines[max(0, idx - 1)]
-      line_below = lines[min(len(lines) - 1, idx + 1)]
 
       assert_equal_or_more_indentation(current_line, line_above)
-      assert_equal_or_more_indentation(current_line, line_below)
 
   def test_cycle_self(self):
     self.do_test_cycle('graph_test:self_cycle')

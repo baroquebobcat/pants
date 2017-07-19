@@ -13,6 +13,7 @@ from six import string_types
 from twitter.common.collections import OrderedSet, maybe_list
 
 from pants.base.build_environment import get_buildroot
+from pants.base.deprecated import deprecated
 from pants.base.exceptions import TargetDefinitionException
 from pants.base.fingerprint_strategy import DefaultFingerprintStrategy
 from pants.base.hash_utils import hash_all
@@ -45,6 +46,15 @@ class AbstractTarget(object):
     """
     return tuple()
 
+  @classmethod
+  def alias(cls):
+    """Subclasses should return their desired BUILD file alias.
+
+    :rtype: string
+    """
+    raise NotImplementedError()
+
+  # TODO: Kill this in 1.5.0.dev0, once this old-style resource specification is gone.
   @property
   def has_resources(self):
     """Returns True if the target has an associated set of Resources.
@@ -123,13 +133,10 @@ class Target(AbstractTarget):
   :API: public
   """
 
-
   class RecursiveDepthError(AddressLookupError):
     """Raised when there are too many recursive calls to calculate the fingerprint."""
-    pass
 
-
-  _MAX_RECURSION_DEPTH=300
+  _MAX_RECURSION_DEPTH = 250
 
   class WrongNumberOfAddresses(Exception):
     """Internal error, too many elements in Addresses
@@ -150,8 +157,6 @@ class Target(AbstractTarget):
       """An unknown keyword argument was supplied to Target."""
 
     options_scope = 'target-arguments'
-    deprecated_options_scope = 'unknown-arguments'
-    deprecated_options_scope_removal_version = '1.4.0.dev0'
 
     @classmethod
     def register_options(cls, register):
@@ -159,9 +164,12 @@ class Target(AbstractTarget):
                help='Map of target name to a list of keyword arguments that should be ignored if a '
                     'target receives them unexpectedly. Typically used to allow usage of arguments '
                     'in BUILD files that are not yet available in the current version of pants.')
-      register('--implicit-sources', advanced=True, type=bool,
+      register('--implicit-sources', advanced=True, default=True, type=bool,
+               removal_version='1.6.0.dev0',
+               removal_hint='Implicit sources are now the default.',
                help='If True, Pants will infer the value of the sources argument for certain '
-                    'target types, if they do not have explicit sources specified.')
+                    'target types, if they do not have explicit sources specified. '
+                    'See http://www.pantsbuild.org/build_files.html#target-definitions')
 
     @classmethod
     def check(cls, target, kwargs):
@@ -437,7 +445,6 @@ class Target(AbstractTarget):
     """
     :API: public
     """
-    pass
 
   def mark_invalidation_hash_dirty(self):
     """Invalidates memoized fingerprints for this target, including those in payloads.
@@ -517,7 +524,6 @@ class Target(AbstractTarget):
     """
     :API: public
     """
-    pass
 
   def inject_dependency(self, dependency_address):
     """
@@ -612,6 +618,7 @@ class Target(AbstractTarget):
     return self._build_graph.get_concrete_derived_from(self.address)
 
   @property
+  @deprecated('1.5.0.dev0', 'Use `Target.compute_injectable_specs()` instead.')
   def traversable_specs(self):
     """
     :API: public
@@ -622,6 +629,7 @@ class Target(AbstractTarget):
     return []
 
   @property
+  @deprecated('1.5.0.dev0', 'Use `Target.compute_dependency_specs()` instead.')
   def traversable_dependency_specs(self):
     """
     :API: public
@@ -631,6 +639,55 @@ class Target(AbstractTarget):
     :rtype: list of strings
     """
     return []
+
+  @staticmethod
+  def _validate_target_representation_args(kwargs, payload):
+    assert kwargs is not None or payload is not None, 'must provide either kwargs or payload'
+    assert not (kwargs is not None and payload is not None), 'may not provide both kwargs and payload'
+    assert not (kwargs and not isinstance(kwargs, dict)), (
+      'expected a `dict` object for kwargs, instead found a {}'.format(type(kwargs))
+    )
+    assert not (payload and not isinstance(payload, Payload)), (
+      'expected a `Payload` object for payload, instead found a {}'.format(type(payload))
+    )
+
+  @classmethod
+  def compute_injectable_specs(cls, kwargs=None, payload=None):
+    """Given either pre-Target.__init__() kwargs or a post-Target.__init__() payload, compute the specs
+    to inject as non-dependencies in the same vein as the prior `traversable_specs`.
+
+    :API: public
+
+    :param dict kwargs: The pre-Target.__init__() kwargs dict.
+    :param Payload payload: The post-Target.__init__() Payload object.
+    :yields: Spec strings representing dependencies of this target.
+    """
+    cls._validate_target_representation_args(kwargs, payload)
+    # N.B. This pattern turns this method into a non-yielding generator, which is helpful for subclassing.
+    return
+    yield
+
+  @classmethod
+  def compute_dependency_specs(cls, kwargs=None, payload=None):
+    """Given either pre-Target.__init__() kwargs or a post-Target.__init__() payload, compute the
+    full set of dependency specs in the same vein as the prior `traversable_dependency_specs`.
+
+    N.B. This is a temporary bridge to span the gap between v2 "Fields" products vs v1 `BuildGraph`
+    `Target` object representations. See:
+
+      https://github.com/pantsbuild/pants/issues/3560
+      https://github.com/pantsbuild/pants/issues/3561
+
+    :API: public
+
+    :param dict kwargs: The pre-Target.__init__() kwargs dict.
+    :param Payload payload: The post-Target.__init__() Payload object.
+    :yields: Spec strings representing dependencies of this target.
+    """
+    cls._validate_target_representation_args(kwargs, payload)
+    # N.B. This pattern turns this method into a non-yielding generator, which is helpful for subclassing.
+    return
+    yield
 
   @property
   def dependencies(self):

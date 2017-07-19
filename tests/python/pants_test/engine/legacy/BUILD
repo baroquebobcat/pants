@@ -29,9 +29,11 @@ python_tests(
   name = 'bundle_integration',
   sources = ['test_bundle_integration.py'],
   dependencies = [
-    'tests/python/pants_test:int-test'
+    'src/python/pants/base:deprecated',
+    'tests/python/pants_test:int-test',
   ],
-  tags = {'integration'}
+  tags = {'integration'},
+  timeout = 240,
 )
 
 python_tests(
@@ -65,7 +67,7 @@ python_tests(
     'tests/python/pants_test:int-test'
   ],
   tags = {'integration'},
-  timeout = 90,
+  timeout = 30,
 )
 
 python_tests(
@@ -97,6 +99,7 @@ python_tests(
     '3rdparty/python:mock',
     'src/python/pants/bin',
     'src/python/pants/build_graph',
+    'src/python/pants/init',
     'tests/python/pants_test/engine:util',
   ]
 )
@@ -109,6 +112,15 @@ python_tests(
   ],
   tags = {'integration'},
   timeout = 180,
+)
+
+python_tests(
+  name = 'list_owners_integration',
+  sources = ['test_list_owners_integration.py'],
+  dependencies = [
+    'tests/python/pants_test:int-test'
+  ],
+  tags = {'integration'},
 )
 
 python_tests(

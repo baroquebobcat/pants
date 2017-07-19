@@ -7,6 +7,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 import logging
 import os
+import sys
 
 from pants.base.build_environment import (get_buildroot, get_default_pants_config_file,
                                           get_pants_cachedir, get_pants_configdir, pants_version)
@@ -45,7 +46,7 @@ class GlobalOptionsRegistrar(Optionable):
              help='Squelches most console output.')
     # Not really needed in bootstrap options, but putting it here means it displays right
     # after -l and -q in help output, which is conveniently contextual.
-    register('--colors', type=bool, default=True, recursive=True,
+    register('--colors', type=bool, default=sys.stdout.isatty(), recursive=True,
              help='Set whether log messages are displayed in color.')
 
     # Pants code uses this only to verify that we are of the requested version. However
@@ -95,12 +96,11 @@ class GlobalOptionsRegistrar(Optionable):
                   'subprocesses that outlive the workdir data (e.g. `./pants server`).')
     register('--pants-config-files', advanced=True, type=list,
              default=[get_default_pants_config_file()], help='Paths to Pants config files.')
-    # TODO: Deprecate --config-override in favor of --pants-config-files.
-    # But only once we're able to both append and override list-valued options, as there are
-    # use-cases for both here.
     # TODO: Deprecate the --pantsrc/--pantsrc-files options?  This would require being able
     # to set extra config file locations in an initial bootstrap config file.
     register('--config-override', advanced=True, type=list, metavar='<path>',
+             removal_version='1.6.0.dev0',
+             removal_hint='Use --pants-config-files=<second config file path> instead.',
              help='A second config file, to override pants.ini.')
     register('--pantsrc', advanced=True, type=bool, default=True,
              help='Use pantsrc files.')
@@ -126,9 +126,10 @@ class GlobalOptionsRegistrar(Optionable):
     register('--enable-pantsd', advanced=True, type=bool, default=False,
              help='Enables use of the pants daemon (and implicitly, the v2 engine). (Beta)')
 
-    # This facilitates use of the v2 engine for BuildGraph construction, sans daemon.
-    register('--enable-v2-engine', advanced=True, type=bool, default=False,
-             help='Enables use of the v2 engine. (Beta)')
+    # This facilitates use of the v2 engine, sans daemon.
+    # TODO: Add removal_version='1.5.0.dev0' before 1.4 lands.
+    register('--enable-v2-engine', advanced=True, type=bool, default=True,
+             help='Enables use of the v2 engine.')
 
   @classmethod
   def register_options(cls, register):
@@ -154,26 +155,23 @@ class GlobalOptionsRegistrar(Optionable):
              help='Kill nailguns before exiting')
     register('-i', '--interpreter', advanced=True, default=[], type=list,
              metavar='<requirement>',
+             removal_version='1.5.0.dev0',
+             removal_hint='Use --interpreter-constraints in scope python-setup instead.',
              help="Constrain what Python interpreters to use.  Uses Requirement format from "
                   "pkg_resources, e.g. 'CPython>=2.6,<3' or 'PyPy'. By default, no constraints "
                   "are used.  Multiple constraints may be added.  They will be ORed together.")
     register('--exclude-target-regexp', advanced=True, type=list, default=[],
              metavar='<regexp>',
-             help='Exclude targets that match these regexes.',
-             recursive=True)  # TODO: Does this need to be recursive? What does that even mean?
+             help='Exclude target roots that match these regexes.')
     # Relative pants_distdir to buildroot. Requires --pants-distdir to be bootstrapped above first.
     # e.g. '/dist/'
     rel_distdir = '/{}/'.format(os.path.relpath(register.bootstrap.pants_distdir, get_buildroot()))
-    register('--ignore-patterns', advanced=True, type=list, fromfile=True,
-             default=['.*', rel_distdir, 'bower_components', 'node_modules', '*.egg-info'],
-             removal_version='1.3.0.dev0', removal_hint='Use --build-ignore instead.',
-             mutually_exclusive_group='build_ignore', help='See help for --build-ignore.')
     register('--build-ignore', advanced=True, type=list, fromfile=True,
-             default=['.*', rel_distdir, 'bower_components', 'node_modules', '*.egg-info'],
+             default=['.*/', rel_distdir, 'bower_components/', 'node_modules/', '*.egg-info/'],
              help='Paths to ignore when identifying BUILD files. '
                   'This does not affect any other filesystem operations. '
                   'Patterns use the gitignore pattern syntax (https://git-scm.com/docs/gitignore).')
-    register('--pants-ignore', advanced=True, type=list, fromfile=True, default=['.*', rel_distdir],
+    register('--pants-ignore', advanced=True, type=list, fromfile=True, default=['.*/', rel_distdir],
              help='Paths to ignore for all filesystem operations performed by pants '
                   '(e.g. BUILD file scanning, glob matching, etc). '
                   'Patterns use the gitignore syntax (https://git-scm.com/docs/gitignore). '
@@ -193,8 +191,12 @@ class GlobalOptionsRegistrar(Optionable):
     register('--print-exception-stacktrace', advanced=True, type=bool,
              help='Print to console the full exception stack trace if encountered.')
     register('--build-file-rev', advanced=True,
+             removal_hint='Lightly used feature, scheduled for removal.', removal_version='1.5.0.dev0',
              help='Read BUILD files from this scm rev instead of from the working tree.  This is '
              'useful for implementing pants-aware sparse checkouts.')
     register('--lock', advanced=True, type=bool, default=True,
              help='Use a global lock to exclude other versions of pants from running during '
                   'critical operations.')
+    register('--subproject-roots', type=list, advanced=True, fromfile=True, default=[],
+             help='Paths that correspond with build roots for any subproject that this '
+                  'project depends on.')

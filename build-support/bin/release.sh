@@ -84,7 +84,6 @@ function execute_packaged_pants_with_internal_backends() {
         'pants.backend.jvm',\
         'pants.backend.project_info',\
         'pants.backend.python',\
-        'internal_backend.optional',\
         'internal_backend.repositories',\
         'internal_backend.sitegen',\
         'internal_backend.utilities',\
@@ -120,10 +119,10 @@ function build_packages() {
     NAME=$(pkg_name $PACKAGE)
     BUILD_TARGET=$(pkg_build_target $PACKAGE)
 
-    banner "Building package ${NAME}-$(local_version) with target '${BUILD_TARGET}' ..."
-
+    start_travis_section "${NAME}" "Building package ${NAME}-$(local_version) with target '${BUILD_TARGET}'"
     run_local_pants setup-py --recursive ${BUILD_TARGET} || \
-    die "Failed to build package ${NAME}-$(local_version) with target '${BUILD_TARGET}'!"
+      die "Failed to build package ${NAME}-$(local_version) with target '${BUILD_TARGET}'!"
+    end_travis_section
   done
 }
 
@@ -133,16 +132,18 @@ function publish_packages() {
   do
     targets+=($(pkg_build_target $PACKAGE))
   done
-  banner "Publishing packages ..."
-  run_local_pants setup-py --run="register sdist upload --sign --identity=$(get_pgp_keyid)" \
-    --recursive ${targets[@]} || \
-  die "Failed to publish packages!"
+  start_travis_section "Publishing" "Publishing packages"
+  run_local_pants setup-py --run="sdist upload --sign --identity=$(get_pgp_keyid)" \
+    --recursive ${targets[@]} || die "Failed to publish packages!"
+  end_travis_section
 }
 
 function pre_install() {
+  start_travis_section "SetupVenv" "Setting up virtualenv"
   VENV_DIR=$(mktemp -d -t pants.XXXXX) && \
   ${ROOT}/build-support/virtualenv $VENV_DIR && \
   source $VENV_DIR/bin/activate
+  end_travis_section
 }
 
 function post_install() {
@@ -185,10 +186,10 @@ function install_and_test_packages() {
     NAME=$(pkg_name $PACKAGE)
     INSTALL_TEST_FUNC=$(pkg_install_test_func $PACKAGE)
 
-    banner "Installing and testing package ${NAME}-$(local_version) ..."
-
+    start_travis_section "${NAME}" "Installing and testing package ${NAME}-$(local_version)"
     eval $INSTALL_TEST_FUNC ${PIP_ARGS[@]} || \
-    die "Failed to install and test package ${NAME}-$(local_version)!"
+      die "Failed to install and test package ${NAME}-$(local_version)!"
+    end_travis_section
   done
 
   post_install || die "Failed to deactivate virtual env while testing ${NAME}-$(local_version)!"
@@ -306,11 +307,11 @@ EOF
 function tag_release() {
   release_version="$(local_version)" && \
   tag_name="release_${release_version}" && \
-  git tag \
+  git tag -f \
     --local-user=$(get_pgp_keyid) \
     -m "pantsbuild.pants release ${release_version}" \
     ${tag_name} && \
-  git push git@github.com:pantsbuild/pants.git ${tag_name}
+  git push -f git@github.com:pantsbuild/pants.git ${tag_name}
 }
 
 function publish_docs_if_master() {
@@ -375,7 +376,10 @@ function check_owner() {
 
    for owner in $(get_owners ${package_name})
    do
-     if [[ "${username}" == "${owner}" ]]
+     # NB: A case-insensitive comparison is done since pypi is case-insensitive wrt usernames.
+     # Note that the ^^ case operator requires bash 4.  If you're on a Mac you may need to brew
+     # install bash, as the version that comes with MacOS is ancient.
+     if [[ "${username^^}" == "${owner^^}" ]]
      then
        return 0
      fi
@@ -387,14 +391,14 @@ function check_owners() {
   username="$(check_pypi)"
 
   total=${#RELEASE_PACKAGES[@]}
-  banner "Checking package ownership for pypi user ${username} of ${total} packages ..."
+  banner "Checking package ownership for pypi user ${username} of ${total} packages"
   dont_own=()
   index=0
   for PACKAGE in "${RELEASE_PACKAGES[@]}"
   do
     index=$((index+1))
     package_name="$(pkg_name $PACKAGE)"
-    banner "[${index}/${total}] checking that ${username} owns ${package_name}..."
+    banner "[${index}/${total}] checking that ${username} owns ${package_name}"
     if package_exists ${package_name}
     then
       if ! check_owner "${username}" "${package_name}"
@@ -504,22 +508,25 @@ fi
 if [[ "${dry_run}" == "true" && "${test_release}" == "true" ]]; then
   usage "The dry run and test options are mutually exclusive, pick one."
 elif [[ "${dry_run}" == "true" ]]; then
-  banner "Performing a dry run release - no artifacts will be uploaded." && \
+  banner "Performing a dry run release" && \
   (
     dry_run_install && \
-    banner "Dry run release succeeded."
+    banner "Dry run release succeeded"
   ) || die "Dry run release failed."
 elif [[ "${test_release}" == "true" ]]; then
-  banner "Installing and testing the latest released packages." && \
+  banner "Installing and testing the latest released packages" && \
   (
     install_and_test_packages && \
-    banner "Successfully installed and tested the latest released packages."
+    banner "Successfully installed and tested the latest released packages"
   ) || die "Failed to install and test the latest released packages."
 else
-  banner "Releasing packages to PyPi." && \
+  banner "Releasing packages to PyPi" && \
   (
-    check_origin && check_clean_branch && check_pgp && check_native_engine && check_owners && \
+    # NB: Ideally we'd `check_native_engine`, but it won't get built until the tag created
+    # in `tag_release` is pushed to origin, triggering a TravisCI run.
+    # See: https://github.com/pantsbuild/pants/issues/4269
+    check_origin && check_clean_branch && check_pgp && check_owners && \
       dry_run_install && publish_packages && tag_release && publish_docs_if_master && \
-      banner "Successfully released packages to PyPi."
+      banner "Successfully released packages to PyPi"
   ) || die "Failed to release packages to PyPi."
 fi

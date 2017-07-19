@@ -5,15 +5,14 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
-import logging
 import os
 from abc import abstractmethod
 from contextlib import contextmanager
 from hashlib import sha1
 from itertools import repeat
 
+from pants.base.deprecated import deprecated_conditional
 from pants.base.exceptions import TaskError
-from pants.base.fingerprint_strategy import TaskIdentityFingerprintStrategy
 from pants.base.worker_pool import Work
 from pants.cache.artifact_cache import UnreadableArtifact, call_insert, call_use_cached_files
 from pants.cache.cache_setup import CacheSetup
@@ -24,12 +23,9 @@ from pants.option.options_fingerprinter import OptionsFingerprinter
 from pants.option.scope import ScopeInfo
 from pants.reporting.reporting_utils import items_to_report_element
 from pants.subsystem.subsystem_client_mixin import SubsystemClientMixin
-from pants.util.dirutil import safe_rm_oldest_items_in_dir
+from pants.util.dirutil import safe_mkdir, safe_rm_oldest_items_in_dir
 from pants.util.memo import memoized_method, memoized_property
 from pants.util.meta import AbstractClass
-
-
-logger = logging.getLogger(__name__)
 
 
 class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
@@ -90,7 +86,8 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
 
   @classmethod
   def subsystem_dependencies(cls):
-    return super(TaskBase, cls).subsystem_dependencies() + (CacheSetup.scoped(cls),)
+    return super(TaskBase, cls).subsystem_dependencies() + (CacheSetup.scoped(cls),
+                                                            BuildInvalidator.Factory)
 
   @classmethod
   def product_types(cls):
@@ -127,9 +124,8 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     return options[cls.options_scope]
 
   @classmethod
-  def _alternate_target_roots(cls, options, address_mapper, build_graph):
+  def get_alternate_target_roots(cls, options, address_mapper, build_graph):
     # Subclasses should not generally need to override this method.
-    # TODO(John Sirois): Kill when killing GroupTask as part of RoundEngine parallelization.
     return cls.alternate_target_roots(cls._scoped_options(options), address_mapper, build_graph)
 
   @classmethod
@@ -145,9 +141,8 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     """
 
   @classmethod
-  def _prepare(cls, options, round_manager):
+  def invoke_prepare(cls, options, round_manager):
     # Subclasses should not generally need to override this method.
-    # TODO(John Sirois): Kill when killing GroupTask as part of RoundEngine parallelization.
     return cls.prepare(cls._scoped_options(options), round_manager)
 
   @classmethod
@@ -179,23 +174,16 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     super(TaskBase, self).__init__()
     self.context = context
     self._workdir = workdir
-    # TODO: It would be nice to use self.get_options().cache_key_gen_version here, because then
-    # we could have a separate value for each scope if we really wanted to. However we can't
-    # access per-task options in Task.__init__ because GroupTask.__init__ calls it with the
-    # group task's scope, which isn't currently in the known scopes we generate options for.
-    self._cache_key_generator = CacheKeyGenerator(
-      self.context.options.for_global_scope().cache_key_gen_version)
 
     self._cache_key_errors = set()
-
-    self._build_invalidator_dir = os.path.join(
-      self.context.options.for_global_scope().pants_workdir,
-      'build_invalidator',
-      self.stable_name())
-
     self._cache_factory = CacheSetup.create_cache_factory_for_task(self)
-
     self._options_fingerprinter = OptionsFingerprinter(self.context.build_graph)
+    self._force_invalidated = False
+
+  @memoized_method
+  def _build_invalidator(self, root=False):
+    build_task = None if root else self.stable_name()
+    return BuildInvalidator.Factory.create(build_task=build_task)
 
   def get_options(self):
     """Returns the option values for this task's scope.
@@ -213,19 +201,23 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     else:
       return self.context.options.passthru_args_for_scope(self.options_scope)
 
-  @property
+  @memoized_property
   def workdir(self):
     """A scratch-space for this task that will be deleted by `clean-all`.
 
-    It's not guaranteed that the workdir exists, just that no other task has been given this
-    workdir path to use.
+    It's guaranteed that no other task has been given this workdir path to use and that the workdir
+    exists.
 
     :API: public
     """
+    safe_mkdir(self._workdir)
     return self._workdir
 
   def _options_fingerprint(self, scope):
-    pairs = self.context.options.get_fingerprintable_for_scope(scope)
+    pairs = self.context.options.get_fingerprintable_for_scope(
+      scope,
+      include_passthru=self.supports_passthru_args()
+    )
     hasher = sha1()
     for (option_type, option_val) in pairs:
       fp = self._options_fingerprinter.fingerprint(option_type, option_val)
@@ -259,7 +251,7 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
 
   def invalidate(self):
     """Invalidates all targets for this task."""
-    BuildInvalidator(self._build_invalidator_dir).force_invalidate_all()
+    self._build_invalidator().force_invalidate_all()
 
   @property
   def create_target_dirs(self):
@@ -324,10 +316,13 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
 
     :API: public
 
-    :param targets:               The targets to check for changes.
-    :param invalidate_dependents: If True then any targets depending on changed targets are invalidated.
-    :param fingerprint_strategy:   A FingerprintStrategy instance, which can do per task, finer grained
-                                  fingerprinting of a given Target.
+    :param targets: The targets to check for changes.
+    :param invalidate_dependents: If True then any targets depending on changed targets are
+                                  invalidated.
+    :param silent: If true, suppress logging information about target invalidation.
+    :param fingerprint_strategy: A FingerprintStrategy instance, which can do per task,
+                                finer grained fingerprinting of a given Target.
+    :param topological_order: Whether to invalidate in dependency order.
 
     If no exceptions are thrown by work in the block, the build cache is updated for the targets.
     Note: the artifact cache is not updated. That must be done manually.
@@ -336,16 +331,23 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     :rtype: InvalidationCheck
     """
 
-    fingerprint_strategy = fingerprint_strategy or TaskIdentityFingerprintStrategy(self)
+    cache_key_generator = CacheKeyGenerator(
+      self.context.options.for_global_scope().cache_key_gen_version,
+      self.fingerprint)
     cache_manager = InvalidationCacheManager(self.workdir,
-                                             self._cache_key_generator,
-                                             self._build_invalidator_dir,
+                                             cache_key_generator,
+                                             self._build_invalidator(),
                                              invalidate_dependents,
                                              fingerprint_strategy=fingerprint_strategy,
                                              invalidation_report=self.context.invalidation_report,
                                              task_name=type(self).__name__,
                                              task_version=self.implementation_version_str(),
                                              artifact_write_callback=self.maybe_write_artifact)
+
+    # If this Task's execution has been forced, invalidate all our target fingerprints.
+    if self._cache_factory.ignore and not self._force_invalidated:
+      self.invalidate()
+      self._force_invalidated = True
 
     invalidation_check = cache_manager.check(targets, topological_order=topological_order)
 
@@ -379,8 +381,8 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
 
       if len(targets):
         msg_elements = ['Invalidated ',
-                        items_to_report_element([t.address.reference() for t in targets], 'target')]
-        msg_elements.append('.')
+                        items_to_report_element([t.address.reference() for t in targets], 'target'),
+                        '.']
         self.context.log.info(*msg_elements)
 
     invalidation_report = self.context.invalidation_report
@@ -389,17 +391,35 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
         invalidation_report.add_vts(cache_manager, vts.targets, vts.cache_key, vts.valid,
                                     phase='pre-check')
 
-    # Cache has been checked to create the full list of invalid VTs. Only copy previous_results for this subset of VTs.
+    # Cache has been checked to create the full list of invalid VTs.
+    # Only copy previous_results for this subset of VTs.
+    if self.incremental:
+      for vts in invalidation_check.invalid_vts:
+        vts.copy_previous_results()
+
+    # This may seem odd: why would we need to invalidate a VersionedTargetSet that is already
+    # invalid?  But the name force_invalidate() is slightly misleading in this context - what it
+    # actually does is delete the key file created at the end of the last successful task run.
+    # This is necessary to avoid the following scenario:
+    #
+    # 1) In state A: Task suceeds and writes some output.  Key is recorded by the invalidator.
+    # 2) In state B: Task fails, but writes some output.  Key is not recorded.
+    # 3) After reverting back to state A: The current key is the same as the one recorded at the
+    #    end of step 1), so it looks like no work needs to be done, but actually the task
+    #   must re-run, to overwrite the output written in step 2.
+    #
+    # Deleting the file ensures that if a task fails, there is no key for which we might think
+    # we're in a valid state.
     for vts in invalidation_check.invalid_vts:
-      if self.incremental:
-        vts.copy_previous_results(self.workdir)
+      vts.force_invalidate()
 
     # Yield the result, and then mark the targets as up to date.
     yield invalidation_check
 
     if invalidation_report:
       for vts in invalidation_check.all_vts:
-        invalidation_report.add_vts(cache_manager, vts.targets, vts.cache_key, vts.valid, phase='post-check')
+        invalidation_report.add_vts(cache_manager, vts.targets, vts.cache_key, vts.valid,
+                                    phase='post-check')
 
     for vt in invalidation_check.invalid_vts:
       vt.update()
@@ -572,10 +592,12 @@ class TaskBase(SubsystemClientMixin, Optionable, AbstractClass):
     :param string goal_name: The goal name to use for any warning emissions.
     :param callable predicate: The predicate to pass to `context.scan().targets(predicate=X)`.
     """
+    deprecated_conditional(
+        lambda: not self.context.target_roots,
+        '1.5.0.dev0',
+        '`./pants {0}` (with no explicit targets) will soon become an error. Please specify '
+        'one or more explicit target specs (e.g. `./pants {0} ::`).'.format(goal_name))
     if not self.context.target_roots and not self.get_options().enable_v2_engine:
-      logger.warn('The behavior of `./pants {0}` (no explicit targets) will soon become a no-op. '
-                  'To remove this warning, please specify one or more explicit target specs (e.g. '
-                  '`./pants {0} ::`).'.format(goal_name))
       # For the v1 path, continue the behavior of e.g. `./pants list` implies `./pants list ::`.
       return self.context.scan().targets(predicate=predicate)
 

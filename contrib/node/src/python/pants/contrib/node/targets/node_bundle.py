@@ -10,10 +10,10 @@ from pants.base.payload import Payload
 from pants.base.payload_field import PrimitiveField
 from pants.fs import archive as archive_lib
 
-from pants.contrib.node.targets.node_module import NodeModule
+from pants.contrib.node.targets.node_package import NodePackage
 
 
-class NodeBundle(NodeModule):
+class NodeBundle(NodePackage):
   """A bundle of node modules."""
 
   def __init__(self, node_module=None, archive='tgz', address=None, payload=None, **kwargs):
@@ -38,12 +38,15 @@ class NodeBundle(NodeModule):
     })
     super(NodeBundle, self).__init__(address=address, payload=payload, **kwargs)
 
-  @property
-  def traversable_dependency_specs(self):
-    for spec in super(NodeBundle, self).traversable_dependency_specs:
+  @classmethod
+  def compute_dependency_specs(cls, kwargs=None, payload=None):
+    for spec in super(NodeBundle, cls).compute_dependency_specs(kwargs, payload):
       yield spec
-    if self.payload.node_module:
-      yield self.payload.node_module
+
+    target_representation = kwargs or payload.as_dict()
+    spec = target_representation.get('node_module')
+    if spec:
+      yield spec
 
   @property
   def node_module(self):

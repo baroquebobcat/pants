@@ -33,12 +33,12 @@ class SourcesField(PayloadField):
     # this into the target, rather than have it reach out for global singletons.
     return SourceRootConfig.global_instance().get_source_roots().find_by_path(self.rel_path)
 
+  def matches(self, path):
+    return self.sources.matches(path) or matches_filespec(path, self.filespec)
+
   @property
   def filespec(self):
     return self.sources.filespec
-
-  def matches(self, path):
-    return matches_filespec(path, self.filespec)
 
   @property
   def rel_path(self):
@@ -64,14 +64,12 @@ class SourcesField(PayloadField):
 
   def relative_to_buildroot(self):
     """All sources joined with their relative paths."""
-    return list(self.sources.iter_relative_paths())
+    return list(self.sources.paths_from_buildroot_iter())
 
   def _compute_fingerprint(self):
     hasher = sha1()
     hasher.update(self.rel_path)
-    for source in sorted(self.source_paths):
-      hasher.update(source)
-      hasher.update(self.sources.file_hash(source))
+    hasher.update(self.sources.files_hash)
     return hasher.hexdigest()
 
   def _validate_sources(self, sources):

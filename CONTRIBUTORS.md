@@ -1,6 +1,7 @@
-Created by running `build-support/bin/contributors.sh`.
+Created by running `./build-support/bin/contributors.sh`.
 
 + Aaron Mitchell
++ Adam Chainz
 + Alan Paulin
 + Alexander Johnson
 + Alyssa Pohahau
@@ -9,6 +10,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Antoine Tollenaere
 + Benjy Weinberger
 + Bill Farner
++ Brandon Milton
 + Brian Larson
 + Brian Wickman
 + Bruno Bieth
@@ -28,8 +30,11 @@ Created by running `build-support/bin/contributors.sh`.
 + Dave Brewster
 + David Taylor
 + David Turner
++ Derek Young
 + Divij Rajkumar
 + Dominic Hamon
++ Dorothy Ordogh
++ Drew Rothstein
 + Dumitru Daniliuc
 + Ebube Chuba
 + Emily Caveness
@@ -43,6 +48,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Florian Leibert
 + Gabriel Gonzalez
 + Garrett Malmquist
++ Gary M. Josack
 + Harley Cooper
 + Hwasung Lee
 + Igor Morozov
@@ -52,9 +58,12 @@ Created by running `build-support/bin/contributors.sh`.
 + Jackson Davis
 + Jake Donham
 + James Bench
++ James Koch
 + James Mouradian
 + Jason Jackson
++ Jason Song
 + Jeff Jenkins
++ Jeremy Hintz
 + Jessica Rosenfield
 + Jin Feng
 + Joe Crobak
@@ -68,6 +77,7 @@ Created by running `build-support/bin/contributors.sh`.
 + John Townsend
 + Jon Boulle
 + Jonathan Coveney
++ Jonathan D. Simms
 + Jonathan Sokolowski
 + Joshua Cohen
 + Joshua Humphries
@@ -78,6 +88,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Kevin Sweeney
 + Kris Wilson
 + Kushal Dave
++ Kyle Derr
 + Larry Hosken
 + Lei Wang
 + Leo Kim
@@ -101,6 +112,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Mike Lindsey
 + Misho Krastev
 + Moses Nakamura
++ Nadav Samet
 + Neil Sanchala
 + Nicholas Santos
 + Nick Howard
@@ -108,6 +120,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Nitay Joffe
 + Ny Saechao
 + Oliver Gould
++ Pankaj Gupta
 + Patrick Lawson
 + Paul Groudas
 + Peiyu Wang
@@ -120,6 +133,7 @@ Created by running `build-support/bin/contributors.sh`.
 + Senthil Kumaran
 + Sergey Serebryakov
 + Simeon Franklin
++ Stefan Sauer
 + Stu Hood
 + Tansy Arron-Walker
 + Ted Dziuba
@@ -136,5 +150,6 @@ Created by running `build-support/bin/contributors.sh`.
 + Ugo Di Girolamo
 + Wei An
 + Wolfram Arnold
++ Xaelias
 + Yi Cheng
 + Yujie Chen

@@ -9,13 +9,13 @@ import os
 import re
 
 from pants.backend.jvm.subsystems.shader import Shader
-from pants.backend.jvm.targets.jar_dependency import JarDependency
 from pants.backend.jvm.targets.java_library import JavaLibrary
 from pants.backend.jvm.targets.junit_tests import JUnitTests
 from pants.backend.jvm.tasks.nailgun_task import NailgunTask
 from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
 from pants.base.workunit import WorkUnitLabel
+from pants.java.jar.jar_dependency import JarDependency
 from pants.option.custom_types import file_option
 from pants.util.dirutil import safe_mkdir
 from pants.util.memo import memoized_property
@@ -68,8 +68,7 @@ class FindBugs(NailgunTask):
                           ],
                           main=cls._FINDBUGS_MAIN,
                           custom_rules=[
-                            Shader.exclude_package('edu.umd.cs.findbugs',
-                                                   recursive=True),
+                            Shader.exclude_package('edu.umd.cs.findbugs', recursive=True),
                           ])
 
   @classmethod
@@ -83,7 +82,7 @@ class FindBugs(NailgunTask):
 
   @memoized_property
   def _exclude_patterns(self):
-    return "(" + ")|(".join(self.get_options().exclude_patterns) + ")"
+    return [re.compile(x) for x in set(self.get_options().exclude_patterns or [])]
 
   def _is_findbugs_target(self, target):
     if not isinstance(target, (JavaLibrary, JUnitTests)):
@@ -92,9 +91,11 @@ class FindBugs(NailgunTask):
     if target.is_synthetic:
       self.context.log.debug('Skipping [{}] because it is a synthetic target'.format(target.address.spec))
       return False
-    if self.get_options().exclude_patterns and re.match(self._exclude_patterns, target.address.spec):
-      self.context.log.debug('Skipping [{}] because it matches exclude pattern'.format(target.address.spec))
-      return False
+    for pattern in self._exclude_patterns:
+      if pattern.search(target.address.spec):
+        self.context.log.debug(
+          "Skipping [{}] because it matches exclude pattern '{}'".format(target.address.spec, pattern.pattern))
+        return False
     return True
 
   def execute(self):

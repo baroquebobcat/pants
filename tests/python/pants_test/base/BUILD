@@ -33,8 +33,8 @@ python_tests(
 )
 
 python_tests(
-  name = 'bundle_integration',
-  sources = [ 'test_bundle_integration.py' ],
+  name = 'exclude_target_regexp_integration',
+  sources = [ 'test_exclude_target_regexp_integration.py' ],
   dependencies = [
     'tests/python/pants_test:int-test',
   ],
@@ -155,7 +155,7 @@ python_tests(
   name = 'payload_field',
   sources = ['test_payload_field.py'],
   dependencies = [
-    'src/python/pants/backend/jvm/targets:jvm',
+    'src/python/pants/java/jar',
     'src/python/pants/backend/python:python_requirement',
     'src/python/pants/base:payload_field',
     'tests/python/pants_test:base_test',

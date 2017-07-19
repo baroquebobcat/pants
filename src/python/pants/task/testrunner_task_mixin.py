@@ -5,10 +5,13 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import os
+import re
+import xml.etree.ElementTree as ET
 from abc import abstractmethod
 from threading import Timer
 
-from pants.base.exceptions import TestFailedTaskError
+from pants.base.exceptions import ErrorWhileTesting
 from pants.util.timeout import Timeout, TimeoutReached
 
 
@@ -53,7 +56,7 @@ class TestRunnerTaskMixin(object):
         self.get_options().timeout_default
       )
       self.context.log.error(message)
-      raise TestFailedTaskError(message)
+      raise ErrorWhileTesting(message)
 
     if not self.get_options().skip:
       test_targets = self._get_test_targets()
@@ -62,6 +65,109 @@ class TestRunnerTaskMixin(object):
 
       all_targets = self._get_targets()
       self._execute(all_targets)
+
+  def report_all_info_for_single_test(self, scope, target, test_name, test_info):
+    """Add all of the test information for a single test.
+
+    Given the dict of test information
+    {'time': 0.124, 'result_code': 'success', 'classname': 'some.test.class'}
+    iterate through each item and report the single item with _report_test_info.
+
+    :param string scope: The scope for which we are reporting the information.
+    :param Target target: The target that we want to store the test information under.
+    :param string test_name: The test's name.
+    :param dict test_info: The test's information, including run duration and result.
+    """
+    for test_info_key, test_info_val in test_info.items():
+      key_list = [test_name, test_info_key]
+      self._report_test_info(scope, target, key_list, test_info_val)
+
+  def _report_test_info(self, scope, target, keys, test_info):
+    """Add test information to target information.
+
+    :param string scope: The scope for which we are reporting information.
+    :param Target target: The target that we want to store the test information under.
+    :param list of string keys: The keys that will point to the information being stored.
+    :param primitive test_info: The information being stored.
+    """
+    if target and scope:
+      address = target.address.spec
+      target_type = target.type_alias
+      self.context.run_tracker.report_target_info('GLOBAL', address, ['target_type'], target_type)
+      self.context.run_tracker.report_target_info(scope, address, keys, test_info)
+
+  @staticmethod
+  def parse_test_info(xml_path, error_handler, additional_testcase_attributes=None):
+    """Parses the junit file for information needed about each test.
+
+    Will include:
+      - test name
+      - test result
+      - test run time duration or None if not a parsable float
+
+    If additional test case attributes are defined, then it will include those as well.
+
+    :param string xml_path: The path of the xml file to be parsed.
+    :param function error_handler: The error handler function.
+    :param list of string additional_testcase_attributes: A list of additional attributes belonging
+           to each testcase that should be included in test information.
+    :return: A dictionary of test information.
+    """
+    tests_in_path = {}
+    testcase_attributes = additional_testcase_attributes or []
+
+    SUCCESS = 'success'
+    SKIPPED = 'skipped'
+    FAILURE = 'failure'
+    ERROR = 'error'
+
+    _XML_MATCHER = re.compile(r'^TEST-.+\.xml$')
+
+    class ParseError(Exception):
+      """Indicates an error parsing a xml report file."""
+
+      def __init__(self, xml_path, cause):
+        super(ParseError, self).__init__('Error parsing test result file {}: {}'
+          .format(xml_path, cause))
+        self.xml_path = xml_path
+        self.cause = cause
+
+    def parse_xml_file(xml_file_path):
+      try:
+        root = ET.parse(xml_file_path).getroot()
+        for testcase in root.iter('testcase'):
+          test_info = {}
+
+          try:
+            test_info.update({'time': float(testcase.attrib.get('time'))})
+          except (TypeError, ValueError):
+            test_info.update({'time': None})
+
+          for attribute in testcase_attributes:
+            test_info[attribute] = testcase.attrib.get(attribute)
+
+          result = SUCCESS
+          if next(testcase.iter('error'), None) is not None:
+            result = ERROR
+          elif next(testcase.iter('failure'), None) is not None:
+            result = FAILURE
+          elif next(testcase.iter('skipped'), None) is not None:
+            result = SKIPPED
+          test_info.update({'result_code': result})
+
+          tests_in_path.update({testcase.attrib.get('name', ''): test_info})
+
+      except (ET.ParseError, ValueError) as e:
+        error_handler(ParseError(xml_file_path, e))
+
+    if os.path.isdir(xml_path):
+      for name in os.listdir(xml_path):
+        if _XML_MATCHER.match(name):
+          parse_xml_file(os.path.join(xml_path, name))
+    else:
+      parse_xml_file(xml_path)
+
+    return tests_in_path
 
   def _get_test_targets_for_spawn(self):
     """Invoked by _spawn_and_wait to know targets being executed. Defaults to _get_test_targets().
@@ -111,7 +217,7 @@ class TestRunnerTaskMixin(object):
                                                      self.get_options().timeout_terminate_wait)):
         return process_handler.wait()
     except TimeoutReached as e:
-      raise TestFailedTaskError(str(e), failed_targets=test_targets)
+      raise ErrorWhileTesting(str(e), failed_targets=test_targets)
 
   @abstractmethod
   def _spawn(self, *args, **kwargs):
@@ -213,6 +319,6 @@ class TestRunnerTaskMixin(object):
   def _execute(self, all_targets):
     """Actually goes ahead and runs the tests for the targets.
 
-    :param targets: list of the targets whose tests are to be run
+    :param all_targets: list of the targets whose tests are to be run
     """
     raise NotImplementedError

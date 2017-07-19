@@ -13,7 +13,7 @@ from pants.base.deprecated import (BadDecoratorNestingError, BadRemovalVersionEr
                                    CodeRemovedError, MissingRemovalVersionError,
                                    NonDevRemovalVersionError, deprecated, deprecated_conditional,
                                    deprecated_module, warn_or_error)
-from pants.version import VERSION
+from pants.version import PANTS_SEMVER, VERSION
 
 
 class DeprecatedTest(unittest.TestCase):
@@ -102,6 +102,18 @@ class DeprecatedTest(unittest.TestCase):
       self.assertEqual(expected_return, deprecated_function())
       self.assertIn(hint_message, str(extract_deprecation_warning()))
 
+  def test_deprecation_subject(self):
+    subject = '`./pants blah`'
+    expected_return = 'deprecated_function'
+
+    @deprecated(self.FUTURE_VERSION, subject=subject)
+    def deprecated_function():
+      return expected_return
+
+    with self._test_deprecation() as extract_deprecation_warning:
+      self.assertEqual(expected_return, deprecated_function())
+      self.assertIn(subject, str(extract_deprecation_warning()))
+
   def test_removal_version_required(self):
     with self.assertRaises(MissingRemovalVersionError):
       @deprecated(None)
@@ -139,6 +151,9 @@ class DeprecatedTest(unittest.TestCase):
       def test_func1a():
         pass
 
+  @unittest.skipIf(not PANTS_SEMVER.is_prerelease,
+                   'Uses the current version as a deprecation version, which is only valid '
+                   'for prereleases.')
   def test_removal_version_same(self):
     with self.assertRaises(CodeRemovedError):
       warn_or_error(VERSION, 'dummy description')

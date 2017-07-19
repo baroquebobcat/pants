@@ -19,7 +19,7 @@ from twitter.common.collections import OrderedSet
 from pants.base.build_environment import get_buildroot
 from pants.base.build_file import BuildFile
 from pants.base.specs import DescendantAddresses, SiblingAddresses, SingleAddress
-from pants.build_graph.address import Address, parse_spec
+from pants.build_graph.address import Address
 from pants.build_graph.address_lookup_error import AddressLookupError
 from pants.build_graph.address_mapper import AddressMapper
 from pants.build_graph.build_file_parser import BuildFileParser
@@ -47,7 +47,8 @@ class BuildFileAddressMapper(AddressMapper):
   # patterns, because the asterisks in its name make it an invalid regexp.
   _UNMATCHED_KEY = '** unmatched **'
 
-  def __init__(self, build_file_parser, project_tree, build_ignore_patterns=None, exclude_target_regexps=None):
+  def __init__(self, build_file_parser, project_tree, build_ignore_patterns=None, exclude_target_regexps=None,
+               subproject_roots=None):
     """Create a BuildFileAddressMapper.
 
     :param build_file_parser: An instance of BuildFileParser
@@ -60,6 +61,7 @@ class BuildFileAddressMapper(AddressMapper):
 
     self._exclude_target_regexps = exclude_target_regexps or []
     self._exclude_patterns = [re.compile(pattern) for pattern in self._exclude_target_regexps]
+    self.subproject_roots = subproject_roots or []
 
   @property
   def root_dir(self):
@@ -113,8 +115,7 @@ class BuildFileAddressMapper(AddressMapper):
     :rtype: :class:`pants.build_graph.address.BuildFileAddress`
     """
     try:
-      spec_path, name = parse_spec(spec, relative_to=relative_to)
-      address = Address(spec_path, name)
+      address = Address.parse(spec, relative_to=relative_to, subproject_roots=self.subproject_roots)
       build_file_address, _ = self.resolve(address)
       return build_file_address
     except (ValueError, AddressLookupError) as e:
@@ -207,7 +208,7 @@ class BuildFileAddressMapper(AddressMapper):
 
   @staticmethod
   def is_declaring_file(address, file_path):
-    return address.build_file.relpath == file_path
+    return address.rel_path == file_path
 
   def _scan_spec(self, spec, fail_fast):
     """Scans the given address spec."""
@@ -255,11 +256,11 @@ class BuildFileAddressMapper(AddressMapper):
         '{was_not_found_message}, because that directory contains no BUILD files defining addressable entities.'
           .format(was_not_found_message=was_not_found_message))
     # Print BUILD file extensions if there's more than one BUILD file with targets only.
-    if (any(not hasattr(address, 'build_file') for address in addresses) or
-        len(set(address.build_file for address in addresses)) == 1):
+    if (any(not hasattr(address, 'rel_path') for address in addresses) or
+        len(set(address.rel_path for address in addresses)) == 1):
       specs = [':{}'.format(address.target_name) for address in addresses]
     else:
-      specs = [':{} (from {})'.format(address.target_name, os.path.basename(address.build_file.relpath))
+      specs = [':{} (from {})'.format(address.target_name, os.path.basename(address.rel_path))
                for address in addresses]
 
     # Might be neat to sort by edit distance or something, but for now alphabetical is fine.

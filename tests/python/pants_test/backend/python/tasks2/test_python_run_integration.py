@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2014 Pants project contributors (see CONTRIBUTORS.md).
+# Copyright 2017 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
@@ -22,26 +22,38 @@ class PythonRunIntegrationTest(PantsRunIntegrationTest):
     with temporary_dir() as interpreters_cache:
       pants_ini_config = {'python-setup': {'interpreter_cache_dir': interpreters_cache}}
       pants_run_27 = self.run_pants(
-        command=['run2', '{}:echo_interpreter_version_2.7'.format(self.testproject)],
+        command=['run', '{}:echo_interpreter_version_2.7'.format(self.testproject)],
         config=pants_ini_config
       )
       self.assert_success(pants_run_27)
       pants_run_26 = self.run_pants(
-        command=['run2', '{}:echo_interpreter_version_2.6'.format(self.testproject),
-                 '--pyprep-interpreter-constraints=CPython>=2.6,<3',
-                 '--pyprep-interpreter-constraints=CPython>=3.3'],
+        command=['run', '{}:echo_interpreter_version_2.6'.format(self.testproject),
+                 '--python-setup-interpreter-constraints=CPython>=2.6,<3',
+                 '--python-setup-interpreter-constraints=CPython>=3.3'],
         config=pants_ini_config
       )
       self.assert_success(pants_run_26)
 
   def test_die(self):
-    command = ['run2',
+    command = ['run',
                '{}:die'.format(self.testproject),
-               '--pyprep-interpreter-constraints=CPython>=2.6,<3',
-               '--pyprep-interpreter-constraints=CPython>=3.3',
+               '--python-setup-interpreter-constraints=CPython>=2.6,<3',
+               '--python-setup-interpreter-constraints=CPython>=3.3',
                '--quiet']
     pants_run = self.run_pants(command=command)
     assert pants_run.returncode == 57
+
+  def test_get_env_var(self):
+    var_key = 'SOME_MAGICAL_VAR'
+    var_val = 'a value'
+    command = ['-q',
+               'run',
+               'testprojects/src/python/print_env',
+               '--',
+               var_key]
+    pants_run = self.run_pants(command=command, extra_env={var_key: var_val})
+    self.assert_success(pants_run)
+    self.assertEquals(var_val, pants_run.stdout_data.strip())
 
   def _maybe_run_version(self, version):
     if self.has_python_version(version):
@@ -59,10 +71,10 @@ class PythonRunIntegrationTest(PantsRunIntegrationTest):
     binary_target = '{}:{}'.format(self.testproject, binary_name)
     # Build a pex.
     # Avoid some known-to-choke-on interpreters.
-    command = ['run2',
+    command = ['run',
                binary_target,
-               '--pyprep-interpreter-constraints=CPython>=2.6,<3',
-               '--pyprep-interpreter-constraints=CPython>=3.3',
+               '--python-setup-interpreter-constraints=CPython>=2.6,<3',
+               '--python-setup-interpreter-constraints=CPython>=3.3',
                '--quiet']
     pants_run = self.run_pants(command=command)
     return pants_run.stdout_data.rstrip().split('\n')[-1]

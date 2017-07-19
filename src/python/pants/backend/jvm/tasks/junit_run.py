@@ -25,13 +25,13 @@ from pants.backend.jvm.tasks.jvm_task import JvmTask
 from pants.backend.jvm.tasks.jvm_tool_task_mixin import JvmToolTaskMixin
 from pants.backend.jvm.tasks.reports.junit_html_report import JUnitHtmlReport
 from pants.base.build_environment import get_buildroot
-from pants.base.exceptions import TargetDefinitionException, TaskError, TestFailedTaskError
+from pants.base.exceptions import ErrorWhileTesting, TargetDefinitionException, TaskError
 from pants.base.workunit import WorkUnitLabel
 from pants.build_graph.target import Target
 from pants.build_graph.target_scopes import Scopes
 from pants.java.distribution.distribution import DistributionLocator
 from pants.java.executor import SubprocessExecutor
-from pants.java.junit.junit_xml_parser import Test, TestRegistry, parse_failed_targets
+from pants.java.junit.junit_xml_parser import RegistryOfTests, Test, parse_failed_targets
 from pants.process.lock import OwnerPrintingInterProcessFileLock
 from pants.task.testrunner_task_mixin import TestRunnerTaskMixin
 from pants.util import desktop
@@ -324,10 +324,10 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
     If `self._tests_to_run` is set, return a registry of explicitly specified tests instead.
 
     :returns: A registry of tests to run.
-    :rtype: :class:`pants.java.junit.junit_xml_parser.Test.TestRegistry`
+    :rtype: :class:`pants.java.junit.junit_xml_parser.Test.RegistryOfTests`
     """
 
-    test_registry = TestRegistry(tuple(self._calculate_tests_from_targets(targets)))
+    test_registry = RegistryOfTests(tuple(self._calculate_tests_from_targets(targets)))
 
     if targets and self._tests_to_run:
       # If there are some junit_test targets in the graph, find ones that match the requested
@@ -346,11 +346,18 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
                         "specifier or bring in the proper target(s)."
                         .format("'\n  '".join(t.render_test_spec() for t in unknown_tests)))
 
-      return TestRegistry(possible_test_to_target)
+      return RegistryOfTests(possible_test_to_target)
     else:
       return test_registry
 
   def _run_tests(self, test_registry, output_dir, coverage=None):
+
+    def parse_error_handler(parse_error):
+      # Just log and move on since the result is only used to characterize failures, and raising
+      # an error here would just distract from the underlying test failures.
+      self.context.log.error('Error parsing test result file {path}: {cause}'
+        .format(path=parse_error.xml_path, cause=parse_error.cause))
+
     if coverage:
       extra_jvm_options = coverage.extra_jvm_options
       classpath_prepend = coverage.classpath_prepend
@@ -408,7 +415,7 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
           self.context.log.debug('CWD = {}'.format(workdir))
           self.context.log.debug('platform = {}'.format(platform))
           with environment_as(**dict(target_env_vars)):
-            result += abs(self._spawn_and_wait(
+            subprocess_result = self._spawn_and_wait(
               executor=SubprocessExecutor(distribution),
               distribution=distribution,
               classpath=complete_classpath,
@@ -421,25 +428,35 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
               cwd=workdir,
               synthetic_jar_dir=output_dir,
               create_synthetic_jar=self.synthetic_classpath,
-            ))
+            )
+            self.context.log.debug('JUnit subprocess exited with result ({})'.format(subprocess_result))
+            result += abs(subprocess_result)
+
+          tests_info = self.parse_test_info(output_dir, parse_error_handler, ['classname'])
+          for test_name, test_info in tests_info.items():
+            test_item = Test(test_info['classname'], test_name)
+            test_target = test_registry.get_owning_target(test_item)
+            self.report_all_info_for_single_test(self.options_scope, test_target,
+                                                 test_name, test_info)
 
           if result != 0 and self._fail_fast:
             break
 
     if result != 0:
-      def error_handler(parse_error):
-        # Just log and move on since the result is only used to characterize failures, and raising
-        # an error here would just distract from the underlying test failures.
-        self.context.log.error('Error parsing test result file {path}: {cause}'
-                               .format(path=parse_error.junit_xml_path, cause=parse_error.cause))
+      target_to_failed_test = parse_failed_targets(test_registry, output_dir, parse_error_handler)
 
-      target_to_failed_test = parse_failed_targets(test_registry, output_dir, error_handler)
-      failed_targets = sorted(target_to_failed_test, key=lambda t: t.address.spec)
+      def sort_owning_target(t):
+        return t.address.spec if t else None
+
+      failed_targets = sorted(target_to_failed_test, key=sort_owning_target)
       error_message_lines = []
       if self._failure_summary:
+        def render_owning_target(t):
+          return t.address.spec if t else '<Unknown Target>'
+
         for target in failed_targets:
-          error_message_lines.append('\n{indent}{address}'.format(indent=' ' * 4,
-                                                                  address=target.address.spec))
+          error_message_lines.append('\n{indent}{owner}'.format(indent=' ' * 4,
+                                                                owner=render_owning_target(target)))
           for test in sorted(target_to_failed_test[target]):
             error_message_lines.append('{indent}{classname}#{methodname}'
                                        .format(indent=' ' * 8,
@@ -450,7 +467,7 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
           .format(main=JUnit.RUNNER_MAIN, code=result, failed=len(failed_targets),
                   targets=pluralize(len(failed_targets), 'target'))
       )
-      raise TestFailedTaskError('\n'.join(error_message_lines), failed_targets=list(failed_targets))
+      raise ErrorWhileTesting('\n'.join(error_message_lines), failed_targets=list(failed_targets))
 
   def _partition(self, tests):
     stride = min(self._batch_size, len(tests))
@@ -531,7 +548,9 @@ class JUnitRun(TestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
       if coverage:
         coverage.report(all_targets, self.execute_java_for_coverage, tests_failed_exception=exc)
       if self._html_report:
+        self.context.log.debug('Generating JUnit HTML report...')
         html_file_path = JUnitHtmlReport().report(output_dir, os.path.join(output_dir, 'reports'))
+        self.context.log.debug('JUnit HTML report generated to {}'.format(html_file_path))
         if self._open:
           desktop.ui_open(html_file_path)
 

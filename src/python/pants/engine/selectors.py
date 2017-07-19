@@ -84,8 +84,7 @@ class SelectVariant(datatype('Variant', ['product', 'variant_key']), Selector):
                                repr(self.variant_key))
 
 
-class SelectDependencies(datatype('Dependencies',
-                                  ['product', 'dep_product', 'field', 'field_types', 'transitive']),
+class SelectDependencies(datatype('Dependencies', ['product', 'dep_product', 'field', 'field_types']),
                          Selector):
   """Selects a product for each of the dependencies of a product for the Subject.
 
@@ -101,8 +100,8 @@ class SelectDependencies(datatype('Dependencies',
 
   optional = False
 
-  def __new__(cls, product, dep_product, field=DEFAULT_FIELD, field_types=tuple(), transitive=False):
-    return super(SelectDependencies, cls).__new__(cls, product, dep_product, field, field_types, transitive)
+  def __new__(cls, product, dep_product, field=DEFAULT_FIELD, field_types=tuple()):
+    return super(SelectDependencies, cls).__new__(cls, product, dep_product, field, field_types)
 
   @property
   def input_product_selector(self):
@@ -121,16 +120,34 @@ class SelectDependencies(datatype('Dependencies',
       field_name_portion = ', {}'.format(repr(self.field))
     else:
       field_name_portion = ''
-    return '{}({}, {}{}{}{})'.format(type(self).__name__,
+    return '{}({}, {}{}{})'.format(type(self).__name__,
                                      type_or_constraint_repr(self.product),
                                      type_or_constraint_repr(self.dep_product),
                                      field_name_portion,
-                                     field_types_portion,
-                                     ', transitive=True' if self.transitive else '',
-                                     )
+                                     field_types_portion)
 
 
-class SelectProjection(datatype('Projection', ['product', 'projected_subject', 'fields', 'input_product']), Selector):
+class SelectTransitive(datatype('Transitive', ['product', 'dep_product', 'field', 'field_types']),
+                       Selector):
+  """A variation of `SelectDependencies` that is used to recursively request a product.
+
+  One use case is to eagerly walk the entire graph.
+
+  It first selects for dep_product then recursively requests products with the `product` type, expanding each by its
+  `field`.
+
+  Requires that both the dep_product and product have the same field `field` that contains the same `field_types`.
+  """
+
+  DEFAULT_FIELD = 'dependencies'
+
+  optional = False
+
+  def __new__(cls, product, dep_product, field=DEFAULT_FIELD, field_types=tuple()):
+    return super(SelectTransitive, cls).__new__(cls, product, dep_product, field, field_types)
+
+
+class SelectProjection(datatype('Projection', ['product', 'projected_subject', 'field', 'input_product']), Selector):
   """Selects a field of the given Subject to produce a Subject, Product dependency from.
 
   Projecting an input allows for deduplication in the graph, where multiple Subjects
@@ -140,6 +157,11 @@ class SelectProjection(datatype('Projection', ['product', 'projected_subject', '
   is projected directly rather than attempting to use it to construct the projected type.
   """
   optional = False
+
+  def __new__(cls, product, projected_subject, field, input_product):
+    if not isinstance(field, six.string_types):
+      raise ValueError('Expected `field` to be a string, but was: {!r}'.format(field))
+    return super(SelectProjection, cls).__new__(cls, product, projected_subject, field, input_product)
 
   @property
   def input_product_selector(self):
@@ -153,16 +175,6 @@ class SelectProjection(datatype('Projection', ['product', 'projected_subject', '
     return '{}({}, {}, {}, {})'.format(type(self).__name__,
                                        type_or_constraint_repr(self.product),
                                        self.projected_subject.__name__,
-                                       repr(self.fields),
+                                       repr(self.field),
                                        getattr(
                                          self.input_product, '__name__', repr(self.input_product)))
-
-
-class SelectLiteral(datatype('Literal', ['subject', 'product']), Selector):
-  """Selects a literal Subject (other than the one applied to the selector)."""
-  optional = False
-
-  def __repr__(self):
-    return '{}({}, {})'.format(type(self).__name__,
-                               repr(self.subject),
-                               type_or_constraint_repr(self.product))

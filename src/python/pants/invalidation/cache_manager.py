@@ -12,8 +12,9 @@ from hashlib import sha1
 
 from pants.build_graph.build_graph import sort_targets
 from pants.build_graph.target import Target
-from pants.invalidation.build_invalidator import BuildInvalidator, CacheKeyGenerator
+from pants.invalidation.build_invalidator import CacheKeyGenerator
 from pants.util.dirutil import relative_symlink, safe_delete, safe_mkdir, safe_rmtree
+from pants.util.memo import memoized_method
 
 
 class VersionedTargetSet(object):
@@ -145,14 +146,17 @@ class VersionedTargetSet(object):
       if self.has_previous_results_dir:
         yield self.previous_results_dir
 
+  @memoized_method
+  def _target_to_vt(self):
+    return {vt.target: vt for vt in self.versioned_targets}
+
   def __repr__(self):
     return 'VTS({}, {})'.format(','.join(target.address.spec for target in self.targets),
                                 'valid' if self.valid else 'invalid')
 
 
 class VersionedTarget(VersionedTargetSet):
-  """This class represents a singleton VersionedTargetSet, and has links to VersionedTargets that
-  the wrapped target depends on (after having resolved through any "alias" targets.
+  """This class represents a singleton VersionedTargetSet.
 
   :API: public
   """
@@ -181,13 +185,14 @@ class VersionedTarget(VersionedTargetSet):
       relative_symlink(self._current_results_dir, self._results_dir)
     self.ensure_legal()
 
-  def copy_previous_results(self, root_dir):
+  def copy_previous_results(self):
     """Use the latest valid results_dir as the starting contents of the current results_dir.
 
-    Should be called after the cache is checked, since previous_results are not useful if there is a cached artifact.
+    Should be called after the cache is checked, since previous_results are not useful if there is
+    a cached artifact.
     """
-    # TODO(mateo): An immediate followup removes the root_dir param, it is identical to the task.workdir.
-    # TODO(mateo): This should probably be managed by the task, which manages the rest of the incremental support.
+    # TODO(mateo): This should probably be managed by the task, which manages the rest of the
+    # incremental support.
     if not self.previous_cache_key:
       return None
     previous_path = self._cache_manager.results_dir_path(self.previous_cache_key, stable=False)
@@ -240,7 +245,7 @@ class InvalidationCacheManager(object):
   def __init__(self,
                results_dir_root,
                cache_key_generator,
-               build_invalidator_dir,
+               build_invalidator,
                invalidate_dependents,
                fingerprint_strategy=None,
                invalidation_report=None,
@@ -254,13 +259,15 @@ class InvalidationCacheManager(object):
     self._task_name = task_name or 'UNKNOWN'
     self._task_version = task_version or 'Unknown_0'
     self._invalidate_dependents = invalidate_dependents
-    self._invalidator = BuildInvalidator(build_invalidator_dir)
+    self._invalidator = build_invalidator
     self._fingerprint_strategy = fingerprint_strategy
     self._artifact_write_callback = artifact_write_callback
     self.invalidation_report = invalidation_report
 
-    # Create the task-versioned prefix of the results dir, and a stable symlink to it (useful when debugging).
-    self._results_dir_prefix = os.path.join(results_dir_root, sha1(self._task_version).hexdigest()[:12])
+    # Create the task-versioned prefix of the results dir, and a stable symlink to it
+    # (useful when debugging).
+    self._results_dir_prefix = os.path.join(results_dir_root,
+                                            sha1(self._task_version).hexdigest()[:12])
     safe_mkdir(self._results_dir_prefix)
     stable_prefix = os.path.join(results_dir_root, self._STABLE_DIR_NAME)
     safe_delete(stable_prefix)

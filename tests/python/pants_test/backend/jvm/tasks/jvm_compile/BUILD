@@ -2,6 +2,17 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 python_tests(
+  name = 'compile_context',
+  sources = ['test_compile_context.py'],
+  dependencies = [
+    '3rdparty/python:mock',
+    'src/python/pants/backend/jvm/targets:java',
+    'src/python/pants/backend/jvm/tasks/jvm_compile:compile_context',
+    'tests/python/pants_test:base_test',
+  ],
+)
+
+python_tests(
   name = 'jvm_classpath_published',
   sources = ['test_jvm_classpath_published.py'],
   dependencies = [
@@ -12,6 +23,17 @@ python_tests(
     'tests/python/pants_test/tasks:task_test_base',
   ],
 )
+
+python_tests(
+  name = 'jvm_compile',
+  sources = ['test_jvm_compile.py'],
+  dependencies = [
+    'src/python/pants/backend/jvm/tasks:classpath_products',
+    'src/python/pants/backend/jvm/tasks/jvm_compile',
+    'tests/python/pants_test/tasks:task_test_base',
+  ],
+)
+
 
 python_library(
   name='base_compile_integration_test',
@@ -29,6 +51,17 @@ python_tests(
     ':base_compile_integration_test',
   ],
   tags={'integration'},
+)
+
+python_tests(
+  name='dep_exports_integration',
+  sources=['test_dep_exports_integration.py'],
+  dependencies = [
+    'src/python/pants/base:build_environment',
+    'tests/python/pants_test:int-test',
+  ],
+  tags={'integration'},
+  timeout=600,
 )
 
 python_tests(

@@ -24,11 +24,11 @@ from pants.build_graph.build_file_aliases import BuildFileAliases
 from pants.build_graph.build_file_parser import BuildFileParser
 from pants.build_graph.mutable_build_graph import MutableBuildGraph
 from pants.build_graph.target import Target
-from pants.pantsd.util import clean_global_runtime_state
+from pants.init.util import clean_global_runtime_state
 from pants.source.source_root import SourceRootConfig
 from pants.subsystem.subsystem import Subsystem
 from pants.util.dirutil import safe_mkdir, safe_open, safe_rmtree
-from pants_test.base.context_utils import create_context
+from pants_test.base.context_utils import create_context_from_options
 from pants_test.option.util.fakes import create_options_for_optionables
 
 
@@ -168,6 +168,7 @@ class BaseTest(unittest.TestCase):
                          **kwargs)
     dependencies = dependencies or []
 
+    self.build_graph.apply_injectables([target])
     self.build_graph.inject_target(target,
                                    dependencies=[dep.address for dep in dependencies],
                                    derived_from=derived_from,
@@ -175,17 +176,22 @@ class BaseTest(unittest.TestCase):
 
     # TODO(John Sirois): This re-creates a little bit too much work done by the BuildGraph.
     # Fixup the BuildGraph to deal with non BuildFileAddresses better and just leverage it.
-    for traversable_dependency_spec in target.traversable_dependency_specs:
-      traversable_dependency_address = Address.parse(traversable_dependency_spec,
-                                                     relative_to=address.spec_path)
-      traversable_dependency_target = self.build_graph.get_target(traversable_dependency_address)
-      if not traversable_dependency_target:
-        raise ValueError('Tests must make targets for traversable dependency specs ahead of them '
+    traversables = [target.compute_dependency_specs(payload=target.payload)]
+    # Only poke `traversable_dependency_specs` if a concrete implementation is defined
+    # in order to avoid spurious deprecation warnings.
+    if type(target).traversable_dependency_specs is not Target.traversable_dependency_specs:
+      traversables.append(target.traversable_dependency_specs)
+
+    for dependency_spec in itertools.chain(*traversables):
+      dependency_address = Address.parse(dependency_spec, relative_to=address.spec_path)
+      dependency_target = self.build_graph.get_target(dependency_address)
+      if not dependency_target:
+        raise ValueError('Tests must make targets for dependency specs ahead of them '
                          'being traversed, {} tried to traverse {} which does not exist.'
-                         .format(target, traversable_dependency_address))
-      if traversable_dependency_target not in target.dependencies:
+                         .format(target, dependency_address))
+      if dependency_target not in target.dependencies:
         self.build_graph.inject_dependency(dependent=target.address,
-                                           dependency=traversable_dependency_address)
+                                           dependency=dependency_address)
         target.mark_transitive_invalidation_hash_dirty()
 
     return target
@@ -304,19 +310,19 @@ class BaseTest(unittest.TestCase):
 
     options = create_options_for_optionables(optionables,
                                              extra_scopes=extra_scopes,
-                                             options=options)
+                                             options=options,
+                                             passthru_args=passthru_args)
 
     Subsystem.reset(reset_options=True)
     Subsystem.set_options(options)
 
-    context = create_context(options=options,
-                             passthru_args=passthru_args,
-                             target_roots=target_roots,
-                             build_graph=self.build_graph,
-                             build_file_parser=self.build_file_parser,
-                             address_mapper=self.address_mapper,
-                             console_outstream=console_outstream,
-                             workspace=workspace)
+    context = create_context_from_options(options,
+                                          target_roots=target_roots,
+                                          build_graph=self.build_graph,
+                                          build_file_parser=self.build_file_parser,
+                                          address_mapper=self.address_mapper,
+                                          console_outstream=console_outstream,
+                                          workspace=workspace)
     return context
 
   def tearDown(self):

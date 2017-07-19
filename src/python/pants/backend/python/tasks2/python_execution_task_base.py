@@ -8,7 +8,6 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import os
 from copy import copy
 
-import shutil
 from pex.interpreter import PythonInterpreter
 from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
@@ -22,7 +21,7 @@ from pants.backend.python.tasks2.resolve_requirements_task_base import ResolveRe
 from pants.build_graph.address import Address
 from pants.build_graph.resources import Resources
 from pants.invalidation.cache_manager import VersionedTargetSet
-from pants.util.dirutil import safe_rmtree
+from pants.util.dirutil import safe_concurrent_creation
 
 
 class WrappedPEX(object):
@@ -30,6 +29,8 @@ class WrappedPEX(object):
 
   Allows us to set the PEX_PATH in the environment when running.
   """
+
+  _PEX_PATH_ENV_VAR_NAME = 'PEX_PATH'
 
   def __init__(self, pex, extra_pex_paths, interpreter):
     """
@@ -45,15 +46,28 @@ class WrappedPEX(object):
   def interpreter(self):
     return self._interpreter
 
+  def path(self):
+    return self._pex.path()
+
+  def cmdline(self, args=()):
+    cmdline = ' '.join(self._pex.cmdline(args))
+    pex_path = self._pex_path()
+    if pex_path:
+      return '{env_var_name}={pex_path} {cmdline}'.format(env_var_name=self._PEX_PATH_ENV_VAR_NAME,
+                                                          pex_path=pex_path,
+                                                          cmdline=cmdline)
+    else:
+      return cmdline
+
   def run(self, *args, **kwargs):
     kwargs_copy = copy(kwargs)
     env = copy(kwargs_copy.get('env')) if 'env' in kwargs_copy else {}
-    env['PEX_PATH'] = self._extra_pex_paths
+    env[self._PEX_PATH_ENV_VAR_NAME] = self._pex_path()
     kwargs_copy['env'] = env
     return self._pex.run(*args, **kwargs_copy)
 
-  def path(self):
-    return self._pex.path()
+  def _pex_path(self):
+    return ':'.join(self._extra_pex_paths)
 
 
 class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
@@ -65,6 +79,7 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
 
   @classmethod
   def prepare(cls, options, round_manager):
+    super(PythonExecutionTaskBase, cls).prepare(options, round_manager)
     round_manager.require_data(PythonInterpreter)
     round_manager.require_data(ResolveRequirements.REQUIREMENTS_PEX)
     round_manager.require_data(GatherSources.PYTHON_SOURCES)
@@ -76,10 +91,11 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
     """
     return []
 
-  def create_pex(self, pex_info):
+  def create_pex(self, pex_info=None):
     """Returns a wrapped pex that "merges" the other pexes via PEX_PATH."""
-    with self.invalidated(self.context.targets(
-        lambda tgt: isinstance(tgt, (PythonRequirementLibrary, PythonTarget, Resources)))) as invalidation_check:
+    relevant_targets = self.context.targets(
+      lambda tgt: isinstance(tgt, (PythonRequirementLibrary, PythonTarget, Resources)))
+    with self.invalidated(relevant_targets) as invalidation_check:
 
       # If there are no relevant targets, we still go through the motions of resolving
       # an empty set of requirements, to prevent downstream tasks from having to check
@@ -95,7 +111,8 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
       extra_pex_paths_file_path = path + '.extra_pex_paths'
       extra_pex_paths = None
 
-      # Note that we check for the existence of the directory, instead of for invalid_vts, to cover the empty case.
+      # Note that we check for the existence of the directory, instead of for invalid_vts,
+      # to cover the empty case.
       if not os.path.isdir(path):
         pexes = [
           self.context.products.get_data(ResolveRequirements.REQUIREMENTS_PEX),
@@ -111,14 +128,11 @@ class PythonExecutionTaskBase(ResolveRequirementsTaskBase):
           # in the target set's dependency closure.
           pexes = [self.resolve_requirements([self.context.build_graph.get_target(addr)])] + pexes
 
-        extra_pex_paths = os.pathsep.join([pex.path() for pex in pexes])
+        extra_pex_paths = [pex.path() for pex in pexes if pex]
 
-        path_tmp = path + '.tmp'
-        safe_rmtree(path_tmp)
-        builder = PEXBuilder(path_tmp, interpreter, pex_info=pex_info)
-        builder.freeze()
-        safe_rmtree(path)
-        shutil.move(path_tmp, path)
+        with safe_concurrent_creation(path) as safe_path:
+          builder = PEXBuilder(safe_path, interpreter, pex_info=pex_info)
+          builder.freeze()
 
         with open(extra_pex_paths_file_path, 'w') as outfile:
           for epp in extra_pex_paths:

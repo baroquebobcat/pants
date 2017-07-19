@@ -27,7 +27,6 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
   def test_options_scope(self):
     pants_run = self.run_pants(['options', '--no-colors', '--scope=options'])
     self.assert_success(pants_run)
-    self.assertIn('options.colors = False', pants_run.stdout_data)
     self.assertIn('options.scope = options', pants_run.stdout_data)
     self.assertIn('options.name = None', pants_run.stdout_data)
     self.assertNotIn('publish.jar.scm_push_attempts = ', pants_run.stdout_data)
@@ -47,7 +46,7 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
       output_map = json.loads(pants_run.stdout_data)
       self.assertIn("time", output_map)
       self.assertEquals(output_map["time"]["source"], "HARDCODED")
-      self.assertEquals(output_map["time"]["value"], "False")
+      self.assertEquals(output_map["time"]["value"], False)
     except ValueError:
       self.fail("Invalid JSON output")
 
@@ -59,7 +58,7 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
       output_map = json.loads(pants_run.stdout_data)
       self.assertIn("time", output_map)
       self.assertEquals(output_map["time"]["source"], "HARDCODED")
-      self.assertEquals(output_map["time"]["value"], "False")
+      self.assertEquals(output_map["time"]["value"], False)
       self.assertEquals(output_map["time"]["history"], [])
       for _, val in output_map.items():
         self.assertIn("history", val)
@@ -79,7 +78,6 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
     pants_run = self.run_pants(['options', '--no-colors', '--only-overridden'])
     self.assert_success(pants_run)
     self.assertIn('options.only_overridden = True', pants_run.stdout_data)
-    self.assertIn('options.colors = False', pants_run.stdout_data)
     self.assertNotIn('options.scope =', pants_run.stdout_data)
     self.assertNotIn('from HARDCODED', pants_run.stdout_data)
     self.assertNotIn('from NONE', pants_run.stdout_data)
@@ -290,7 +288,7 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
                                   '--no-colors',
                                   'options'])
       self.assert_success(pants_run)
-      self.assertIn("pants_ignore = ['.*', '/dist/', 'some/random/dir'] (from CONFIG)",
+      self.assertIn("pants_ignore = ['.*/', '/dist/', 'some/random/dir'] (from CONFIG)",
                     pants_run.stdout_data)
 
   @ensure_engine
@@ -307,5 +305,5 @@ class TestOptionsIntegration(PantsRunIntegrationTest):
                                   '--no-colors',
                                   'options'])
       self.assert_success(pants_run)
-      self.assertIn("pants_ignore = ['.*', '/some/other/dist/dir/', 'some/random/dir'] (from CONFIG)",
+      self.assertIn("pants_ignore = ['.*/', '/some/other/dist/dir/', 'some/random/dir'] (from CONFIG)",
                     pants_run.stdout_data)

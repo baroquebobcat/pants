@@ -18,7 +18,7 @@ class TestProjectsIntegrationTest(ProjectIntegrationTest):
   # on), we shard all of the targets under `testprojects` into _SHARDS test methods.
   #
   # NB: Do not change this value without matching the number of test methods.
-  _SHARDS = 8
+  _SHARDS = 16
 
   @memoized_property
   def targets(self):
@@ -51,12 +51,14 @@ class TestProjectsIntegrationTest(ProjectIntegrationTest):
       'testprojects/src/java/org/pantsbuild/testproject/missingjardepswhitelist:missingjardepswhitelist',
       'testprojects/src/scala/org/pantsbuild/testproject/compilation_failure',
       'testprojects/src/scala/org/pantsbuild/testproject/compilation_warnings:fatal',
+      'testprojects/src/thrift/org/pantsbuild/thrift_exports:C-without-exports',
       'testprojects/src/thrift/org/pantsbuild/thrift_linter:',
       'testprojects/src/java/org/pantsbuild/testproject/provided:c',
       'testprojects/tests/java/org/pantsbuild/testproject/dummies:failing_target',
       'testprojects/tests/java/org/pantsbuild/testproject/empty:',
       'testprojects/tests/java/org/pantsbuild/testproject/fail256:fail256',
       'testprojects/tests/python/pants/dummies:failing_target',
+      'testprojects/tests/scala/org/pantsbuild/testproject/non_exports:C',
       # These don't pass without special config.
       'testprojects/tests/java/org/pantsbuild/testproject/depman:new-tests',
       'testprojects/tests/java/org/pantsbuild/testproject/depman:old-tests',
@@ -70,6 +72,7 @@ class TestProjectsIntegrationTest(ProjectIntegrationTest):
       'testprojects/tests/java/org/pantsbuild/testproject/testjvms',
       'testprojects/tests/java/org/pantsbuild/testproject/testjvms:eight',
       'testprojects/tests/java/org/pantsbuild/testproject/testjvms:eight-test-platform',
+      'examples/src/java/org/pantsbuild/example/plugin',
     ]
 
     # Targets for testing timeouts. These should only be run during specific integration tests,
@@ -92,7 +95,7 @@ class TestProjectsIntegrationTest(ProjectIntegrationTest):
                        targets_to_exclude)
 
     # Run list with exclude options, then parse and sort output.
-    pants_run = self.run_pants(['list', 'testprojects::'] + exclude_opts)
+    pants_run = self.run_pants(['list', 'testprojects::', 'examples::'] + exclude_opts)
     self.assert_success(pants_run)
     return sorted(pants_run.stdout_data.split())
 
@@ -139,3 +142,27 @@ class TestProjectsIntegrationTest(ProjectIntegrationTest):
 
   def test_shard_7(self):
     self.run_shard(7)
+
+  def test_shard_8(self):
+    self.run_shard(8)
+
+  def test_shard_9(self):
+    self.run_shard(9)
+
+  def test_shard_10(self):
+    self.run_shard(10)
+
+  def test_shard_11(self):
+    self.run_shard(11)
+
+  def test_shard_12(self):
+    self.run_shard(12)
+
+  def test_shard_13(self):
+    self.run_shard(13)
+
+  def test_shard_14(self):
+    self.run_shard(14)
+
+  def test_shard_15(self):
+    self.run_shard(15)

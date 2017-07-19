@@ -108,11 +108,13 @@ class JUnitTests(DeprecatedJavaTestsAlias):
     # applicable labels - fixup the 'java' misnomer.
     self.add_labels('java', 'tests')
 
-  @property
-  def traversable_dependency_specs(self):
-    for spec in super(JUnitTests, self).traversable_dependency_specs:
+  @classmethod
+  def compute_dependency_specs(cls, kwargs=None, payload=None):
+    for spec in super(JUnitTests, cls).compute_dependency_specs(kwargs, payload):
       yield spec
-    yield JUnit.global_instance().library_spec(self._build_graph)
+
+    for spec in JUnit.global_instance().injectables_specs_for_key('library'):
+      yield spec
 
   @property
   def test_platform(self):

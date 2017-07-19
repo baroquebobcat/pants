@@ -1,9 +1,18 @@
-use core::{Field, Function, Key, TypeConstraint, TypeId};
+// Copyright 2017 Pants project contributors (see CONTRIBUTORS.md).
+// Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+use core::{Field, TypeConstraint, TypeId};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Select {
   pub product: TypeConstraint,
   pub variant_key: Option<String>,
+}
+
+impl Select {
+  pub fn without_variant(product: TypeConstraint) -> Select {
+    Select { product: product, variant_key: None }
+  }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -12,7 +21,14 @@ pub struct SelectDependencies {
   pub dep_product: TypeConstraint,
   pub field: Field,
   pub field_types: Vec<TypeId>,
-  pub transitive: bool,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SelectTransitive {
+  pub product: TypeConstraint,
+  pub dep_product: TypeConstraint,
+  pub field: Field,
+  pub field_types: Vec<TypeId>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -27,47 +43,9 @@ pub struct SelectProjection {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SelectLiteral {
-  pub subject: Key,
-  pub product: TypeConstraint,
-}
-
-// NB: The `Task` selector is not user facing, and is provided for symmetry.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Task {
-  pub product: TypeConstraint,
-  pub clause: Vec<Selector>,
-  pub func: Function,
-  pub cacheable: bool,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Selector {
   Select(Select),
   SelectDependencies(SelectDependencies),
+  SelectTransitive(SelectTransitive),
   SelectProjection(SelectProjection),
-  SelectLiteral(SelectLiteral),
-  Task(Task),
-}
-
-impl Selector {
-  pub fn select(product: TypeConstraint) -> Selector {
-    Selector::Select(
-      Select {
-        product: product,
-        variant_key: None,
-      }
-    )
-  }
-
-  // The product type this selector will ultimately produce.
-  pub fn product(&self) -> &TypeConstraint {
-    match self {
-      &Selector::Select(ref s) => &s.product,
-      &Selector::SelectLiteral(ref s) => &s.product,
-      &Selector::SelectDependencies(ref s) => &s.product,
-      &Selector::SelectProjection(ref s) => &s.product,
-      &Selector::Task(ref t) => &t.product,
-    }
-  }
 }

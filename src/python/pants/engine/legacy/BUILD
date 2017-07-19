@@ -8,9 +8,10 @@ python_library(
     'src/python/pants/base:build_file',
     'src/python/pants/base:specs',
     'src/python/pants/build_graph',
-    'src/python/pants/engine',
-    'src/python/pants/engine:fs',
     'src/python/pants/engine:build_files',
+    'src/python/pants/engine:fs',
+    'src/python/pants/engine:mapper',
+    'src/python/pants/engine:nodes',
     'src/python/pants/engine:selectors',
     'src/python/pants/util:dirutil',
   ],
@@ -34,12 +35,14 @@ python_library(
   name='structs',
   sources=['structs.py'],
   dependencies=[
+    'src/python/pants/base:deprecated',
     'src/python/pants/build_graph',
     'src/python/pants/engine:fs',
     'src/python/pants/engine:nodes',
     'src/python/pants/engine:struct',
     'src/python/pants/source',
     'src/python/pants/util:contextutil',
+    'src/python/pants/util:memo',
     'src/python/pants/util:meta',
     'src/python/pants/util:objects',
   ],
@@ -56,6 +59,7 @@ python_library(
     'src/python/pants/base:parse_context',
     'src/python/pants/build_graph',
     'src/python/pants/engine:build_files',
+    'src/python/pants/engine:mapper',
     'src/python/pants/engine:parser',
     'src/python/pants/engine:selectors',
     'src/python/pants/source',
@@ -70,8 +74,9 @@ python_library(
   dependencies=[
     ':address_mapper',
     ':graph',
-    'src/python/pants/base:build_file',
     'src/python/pants/base:specs',
+    'src/python/pants/build_graph',
+    'src/python/pants/source',
   ]
 )
 
