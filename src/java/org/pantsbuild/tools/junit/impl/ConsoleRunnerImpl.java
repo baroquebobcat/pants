@@ -61,7 +61,7 @@ public class ConsoleRunnerImpl {
   private static boolean callSystemExitOnFinish = true;
   /** Intended to be used in unit testing this class */
   private static RunListener testListener = null;
-  private JSecMgr bofh;
+  private JSecMgr secMgr;
 
   /**
    * A stream that allows its underlying output to be swapped.
@@ -370,11 +370,11 @@ public class ConsoleRunnerImpl {
 
   public static class SecRunner extends Runner {
     private final Runner wrappedRunner;
-    private final JSecMgr bofh;
+    private final JSecMgr secMgr;
 
-    public SecRunner(Runner wrappedRunner, JSecMgr bofh) {
+    public SecRunner(Runner wrappedRunner, JSecMgr secMgr) {
       this.wrappedRunner = wrappedRunner;
-      this.bofh = bofh;
+      this.secMgr = secMgr;
     }
 
     @Override public Description getDescription() {
@@ -383,7 +383,7 @@ public class ConsoleRunnerImpl {
 
     @Override public void run(RunNotifier notifier) {
       log("before add seclistener");
-      notifier.addListener(new SecListener(notifier, bofh));
+      notifier.addListener(new SecListener(notifier, secMgr));
       log("after add seclistener");
       wrappedRunner.run(notifier);
       log("after run");
@@ -404,25 +404,23 @@ public class ConsoleRunnerImpl {
     private final RunNotifier runNotifier;
     //private final Result result = new Result();
     private final Map<Description, TestState> tests =  new HashMap<>();
-    private final JSecMgr bofh;
+    private final JSecMgr secMgr;
     // think I need the RunNofifier here after all to trigger a failure.
 
-
-
-    public SecListener(RunNotifier runNotifier, JSecMgr bofh) {
+    public SecListener(RunNotifier runNotifier, JSecMgr secMgr) {
       this.runNotifier = runNotifier;
-      this.bofh = bofh;
+      this.secMgr = secMgr;
     }
     @Override
     public void testRunStarted(Description description) throws Exception {
       // might want to have a nested settings here in the manager
       super.testRunStarted(description);
-      //bofh.startTestClass(new JSecMgr.TestSecurityContext(description.getClassName()));
+      //secMgr.startTestClass(new JSecMgr.TestSecurityContext(description.getClassName()));
     }
 
     @Override
     public void testRunFinished(Result result) throws Exception {
-      if (bofh.anyHasDanglingThreads()) {
+      if (secMgr.anyHasDanglingThreads()) {
         log("has dangling threads! ");
       } else {
         log("All good then");
@@ -433,7 +431,7 @@ public class ConsoleRunnerImpl {
     public void testStarted(Description description) throws Exception {
       super.testStarted(description);
       log("test-started: "+description);
-      bofh.startTest(new JSecMgr.SomeTestSecurityContext(description.getClassName(),
+      secMgr.startTest(new JSecMgr.SomeTestSecurityContext(description.getClassName(),
                                                      description.getMethodName()));
       tests.put(description, TestState.started);
     }
@@ -460,10 +458,10 @@ public class ConsoleRunnerImpl {
           log("Listener here: already had failed");
           // pass -- we're already failing
           // note, might be worth checking why it failed and printing something
-        } else if (bofh.hadSecIssue(description.getClassName())) {
-          Throwable cause = bofh.securityIssue();
+        } else if (secMgr.hadSecIssue(description.getClassName())) {
+          Throwable cause = secMgr.securityIssue();
           log("Listener here: had sec issue, " + cause);
-          log("\n     settings: "+ bofh.contextFor(description.getClassName()));
+          log("\n     settings: "+ secMgr.contextFor(description.getClassName()));
           if (cause == null) {
             cause = new RuntimeException("think it should have failed anyway. " +
                 "Think probably shouldnt get here");
@@ -472,9 +470,9 @@ public class ConsoleRunnerImpl {
           runNotifier.fireTestFailure(new Failure(description, cause));
           // if secmgr thinks it should have failed, then fail it.
         }
-        if (bofh.hasDanglingThreads(description.getClassName())) {
+        if (secMgr.hasDanglingThreads(description.getClassName())) {
           log("has dangling threads! " + description);
-          if (bofh.config.disallowDanglingThread()) {
+          if (secMgr.config.disallowDanglingThread()) {
             runNotifier.fireTestFailure(new Failure(
                 description,
                 new SecurityException("Threads from "+description+" are still running.")));
@@ -483,7 +481,7 @@ public class ConsoleRunnerImpl {
           log("Listener here: no issues");
         }
       } finally {
-        bofh.endTest();
+        secMgr.endTest();
       }
       //description.
       // if not failed and there was a sec issue and we're failing on them, raise an exception
@@ -528,8 +526,8 @@ public class ConsoleRunnerImpl {
       boolean useExperimentalRunner,
       PrintStream out,
       PrintStream err,
-      JSecMgr bofh) {
-    this.bofh = bofh;
+      JSecMgr secMgr) {
+    this.secMgr = secMgr;
 
     Preconditions.checkNotNull(outputMode);
     Preconditions.checkNotNull(defaultConcurrency);
@@ -561,7 +559,7 @@ public class ConsoleRunnerImpl {
       core.addListener(testListener);
     }
 
-    //core.addListener(new SecListener(runNotifier, bofh));
+    //core.addListener(new SecListener(runNotifier, secMgr));
 
     if (!outdir.exists() && !outdir.mkdirs()) {
       throw new IllegalStateException("Failed to create output directory: " + outdir);
@@ -710,7 +708,7 @@ public class ConsoleRunnerImpl {
 
   private Runner runnerFor(Request request) {
     Runner reqRunner = request.getRunner();
-    SecRunner withSecRunner = new SecRunner(reqRunner, bofh);
+    SecRunner withSecRunner = new SecRunner(reqRunner, secMgr);
     if (failFast) {
       return new FailFastRunner(withSecRunner);
     } else {
@@ -989,8 +987,8 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr bofh = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true, false), out);
-    System.setSecurityManager(bofh);
+    JSecMgr secMgr = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true, false), out);
+    System.setSecurityManager(secMgr);
 
 
     ConsoleRunnerImpl runner =
@@ -1008,7 +1006,7 @@ public class ConsoleRunnerImpl {
             // NB: Buffering helps speedup output-heavy tests.
             out,
             err,
-            bofh);
+            secMgr);
 
     List<String> tests = Lists.newArrayList();
     for (String test : options.tests) {
