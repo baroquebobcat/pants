@@ -71,7 +71,7 @@ public class SecBoundarySystemExitTests {
     thread.start();
   }
 
-  // the system exit should fail in
+  // The system exit failure should not be attributed to this test.
   @Test
   public void justSleeps() throws InterruptedException {
     Thread.sleep(10);

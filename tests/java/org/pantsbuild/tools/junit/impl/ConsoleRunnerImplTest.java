@@ -186,32 +186,45 @@ public class ConsoleRunnerImplTest {
   public void testFailSystemExit() {
     String output = runTests(SecBoundarySystemExitTests.class,
         true,
-        new JSecMgr.JSecMgrConfig(true, false, false));
+        new JSecMgr.JSecMgrConfig(true, false, true));
     String testClass = "org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests";
     assertThat(output, containsString("directSystemExit(" + testClass + ")"));
     assertThat(output, containsString("catchesSystemExit(" + testClass + ")"));
     assertThat(output, containsString("exitInJoinedThread(" + testClass + ")"));
-    // should be able to uncomment these, but there's work to do.
-    //assertThat(output, containsString("exitInNotJoinedThread(" + testClass + ")"));
-    //assertThat(output, containsString("There were 4 failures:"));
-    //assertThat(output, containsString("Tests run: 5,  Failures: 4"));
+    assertThat(output, containsString("exitInNotJoinedThread(" + testClass + ")"));
 
-    assertThat(output, containsString("There were 3 failures:"));
-    assertThat(output, containsString("Tests run: 5,  Failures: 3"));
+    assertThat(output, containsString("There were 4 failures:"));
+    assertThat(output, containsString("Tests run: 5,  Failures: 4"));
   }
 
   @Test
-  public void testDisallowDanglingThreadStartedInClass() {
+  public void testDisallowDanglingThreadStartedInTestCase() {
     String output = runTests(SecDanglingThreadFromTestCase.class,
         true,
         new JSecMgr.JSecMgrConfig(true, false, false));
     String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
+    // TODO This shouldn't use a java.lang.SecurityException for the failure
     assertThat(output, containsString("startedThread(" + testClass + ")"));
-    assertThat(output, containsString("There were 3 failures:"));
-    assertThat(output, containsString("Tests run: 5,  Failures: 3"));
+    assertThat(output, containsString("There was 1 failure:"));
+    assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
 
-// test other class spawns thread st the testt class isnt in class context of secmgr
+
+  @Test
+  public void testWhenDanglingThreadsAllowedPassOnThreadStartedInTestCase() {
+    String output = runTests(SecDanglingThreadFromTestCase.class,
+        false,
+        new JSecMgr.JSecMgrConfig(true, false, true));
+    assertThat(output, containsString("OK (1 test)"));
+  }
+  // TODO
+  // - Flag for per class thread lifetimes
+  // -- Allow thread that lives beyond test case
+  // -- allow thread started in before all
+  // -- ??? thread started in static context
+  // - annotation for ignoring threads started in class.
+
+  // test other class spawns thread st the test class isnt in class context of secmgr
   @Test
   public void treatStaticSystemExitAsFailure() {
     String output = runTests(SecStaticSysExitTestCase.class,
