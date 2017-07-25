@@ -285,18 +285,18 @@ public class JSecMgr extends SecurityManager {
 
   public static class JSecMgrConfig {
 
-    public final boolean useThreadGroup;
-    public final boolean allowExit;
+    private final boolean useThreadGroup;
+    private final SystemExitHandling systemExitHandling;
     private final boolean allowDanglingThread;
 
-    JSecMgrConfig(boolean useThreadGroup, boolean allowExit, boolean allowDanglingThread) {
+    JSecMgrConfig(boolean useThreadGroup, SystemExitHandling systemExitHandling, boolean allowDanglingThread) {
       this.useThreadGroup = useThreadGroup;
-      this.allowExit = allowExit;
+      this.systemExitHandling = systemExitHandling;
       this.allowDanglingThread = allowDanglingThread;
     }
 
     public boolean disallowSystemExit() {
-      return !allowExit;
+      return systemExitHandling == SystemExitHandling.disallow;
     }
 
     public boolean disallowDanglingThread() {

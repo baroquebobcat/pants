@@ -1011,7 +1011,7 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr secMgr = new JSecMgr(new JSecMgr.JSecMgrConfig(true, true, false), out);
+    JSecMgr secMgr = new JSecMgr(new JSecMgr.JSecMgrConfig(true, JSecMgr.SystemExitHandling.allow, false), out);
     System.setSecurityManager(secMgr);
 
 
