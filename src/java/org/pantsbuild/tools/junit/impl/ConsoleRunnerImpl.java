@@ -29,6 +29,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
+
 import org.apache.commons.io.output.TeeOutputStream;
 import org.junit.runner.Computer;
 import org.junit.runner.Description;
@@ -62,6 +64,7 @@ public class ConsoleRunnerImpl {
   /** Intended to be used in unit testing this class */
   private static RunListener testListener = null;
   private JSecMgr secMgr;
+  private static Logger logger = Logger.getLogger("pants-junit");
 
   /**
    * A stream that allows its underlying output to be swapped.
@@ -382,15 +385,18 @@ public class ConsoleRunnerImpl {
     }
 
     @Override public void run(RunNotifier notifier) {
-      log("before add seclistener");
-      notifier.addListener(new SecListener(notifier, secMgr));
+      logger.fine("before add seclistener");
+      // SecListener needs to be the first listener, otherwise the failures it fires will not be
+      // in the xml results or the console output. This is because those are constructed with
+      // listeners.
+      notifier.addFirstListener(new SecListener(notifier, secMgr));
       log("after add seclistener");
       wrappedRunner.run(notifier);
-      log("after run");
+      log("After wrapped runner");
     }
 
     private void log(String s) {
-      System.err.println(s);
+      logger.fine(s);
     }
   }
 
@@ -398,6 +404,7 @@ public class ConsoleRunnerImpl {
   public enum TestState {
     started,
     failed,
+    danglingThreads
   }
 
   public static class SecListener extends RunListener {
@@ -420,8 +427,22 @@ public class ConsoleRunnerImpl {
 
     @Override
     public void testRunFinished(Result result) throws Exception {
+      for (Map.Entry<Description, TestState> descriptionTestStateEntry : tests.entrySet()) {
+        // probably need to print our own trailer for test failures here
+        if (descriptionTestStateEntry.getValue() == TestState.danglingThreads) {
+          if (secMgr.hadSecIssue(descriptionTestStateEntry.getKey().getClassName())) {
+            log("found sec issue in dangling thread test.");
+            runNotifier.fireTestFailure(new Failure(descriptionTestStateEntry.getKey(),
+                secMgr.contextFor(descriptionTestStateEntry.getKey().getClassName()).getFailures().iterator().next()));
+          }
+        }
+
+      }
       if (secMgr.anyHasDanglingThreads()) {
         log("has dangling threads! ");
+        //Map.Entry<Description, TestState> next = tests.entrySet().iterator().next();
+        //runNotifier.fireTestFailure(new Failure(next.getKey(), new Exception("has dangling threads")));
+        //runNotifier.fireTestFailure(new Failure(new Description()));
       } else {
         log("All good then");
       }
@@ -476,6 +497,8 @@ public class ConsoleRunnerImpl {
             runNotifier.fireTestFailure(new Failure(
                 description,
                 new SecurityException("Threads from "+description+" are still running.")));
+          } else {
+            tests.put(description, TestState.danglingThreads);
           }
         } else {
           log("Listener here: no issues");
@@ -488,7 +511,7 @@ public class ConsoleRunnerImpl {
     }
 
     private void log(String x) {
-      System.err.println(x);
+      logger.fine("-SecListener-  " + x);
     }
 
   }
@@ -984,6 +1007,7 @@ public class ConsoleRunnerImpl {
     options.defaultConcurrency = computeConcurrencyOption(options.defaultConcurrency,
         options.defaultParallel);
 
+    // NB: Buffering helps speedup output-heavy tests.
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
@@ -1003,7 +1027,6 @@ public class ConsoleRunnerImpl {
             options.numTestShards,
             options.numRetries,
             options.useExperimentalRunner,
-            // NB: Buffering helps speedup output-heavy tests.
             out,
             err,
             secMgr);

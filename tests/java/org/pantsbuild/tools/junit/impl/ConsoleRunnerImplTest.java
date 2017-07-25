@@ -204,11 +204,12 @@ public class ConsoleRunnerImplTest {
         new JSecMgr.JSecMgrConfig(true, false, false));
     String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
     // TODO This shouldn't use a java.lang.SecurityException for the failure
+    // Also could say where the thread was started.
     assertThat(output, containsString("startedThread(" + testClass + ")"));
+    //assertThat(output, containsString("at foo"));
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
-
 
   @Test
   public void testWhenDanglingThreadsAllowedPassOnThreadStartedInTestCase() {
@@ -224,19 +225,28 @@ public class ConsoleRunnerImplTest {
   // -- ??? thread started in static context
   // - annotation for ignoring threads started in class.
 
-  // test other class spawns thread st the test class isnt in class context of secmgr
+  // test other class spawns thread st the test class isn't in class context of secmgr
   @Test
   public void treatStaticSystemExitAsFailure() {
+    // The question here is whether it should fail before running the tests. Right now it runs them,
+    // but the resulting error is
+    // java.lang.ExceptionInInitializerError
+    // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+    // ... 50 lines ...
+    // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
+    // at org.pantsbuild.tools.junit.impl.JSecMgr.checkExit(JSecMgr.java:257)
+    // I think it should either end with 0 tests run 1 error, or
+    // 2 run, 2 error, with a better error than ExceptionInInitializerError
     String output = runTests(SecStaticSysExitTestCase.class,
         true,
         new JSecMgr.JSecMgrConfig(true, false, false));
-    String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
+    String testClass = "org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase";
     //assertThat(output, containsString("startedThread(" + testClass + ")"));
-    assertThat(output, containsString("There were 1 failures:"));
-    assertThat(output, containsString("Tests run: 0,  Failures: 1"));
+    assertThat(output, containsString("There were 2 failures:"));
+    assertThat(output, containsString("Tests run: 2,  Failures: 2"));
   }
 
-    @Test
+  @Test
   public void testFailFastWithMultipleThreads() {
     failFast = false;
     parallelThreads = 8;

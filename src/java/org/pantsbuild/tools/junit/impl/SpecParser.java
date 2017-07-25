@@ -6,12 +6,12 @@ package org.pantsbuild.tools.junit.impl;
 import com.google.common.base.Optional;
 import java.lang.reflect.Method;
 import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.concurrent.Callable;
+import java.util.logging.Logger;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
@@ -22,6 +22,7 @@ import com.google.common.collect.Iterables;
  * are added into each spec
  */
 class SpecParser {
+  private static final Logger logger = Logger.getLogger("junit-spec-parser");
   private final Iterable<String> testSpecStrings;
   private final LinkedHashMap<Class<?>, Spec> specs = new LinkedHashMap<>();
 
@@ -93,43 +94,27 @@ class SpecParser {
   }
 
   private Class<?> loadOrThrow(final String className, String specString) {
-   final JSecMgr securityManager = (JSecMgr) System.getSecurityManager();
     try {
+
       // VV isn't right. This can't exec static client code.
       // ping sec mgr -- this execs static client code, so we want to be sure its covered
-      return AccessController.doPrivileged(
+      return maybeWithSecurityManagerContext(className, new Callable<Class<?>>() {
+        public Class<?> call() throws ClassNotFoundException {
+          log("loading class for ... :" + className);
 
-          new PrivilegedExceptionAction<Class<?>>() {
-            @Override
-            public Class<?> run() throws Exception {
+          Class<?> loadedClass = getClass().getClassLoader().loadClass(className);
 
-      return securityManager.withSettings(new JSecMgr.SomeTestSecurityContext(className,
-              "static"),
-        new Callable<Class<?>>() {
-      public Class<?> call() throws ClassNotFoundException {
-        System.out.println("loading class for :"+className);
-        System.err.println("loading class for ... :"+className);
+          log("getClass().getClassLoader() " + getClass().getClassLoader());
+          log("maybe try inspecting loaded class");
+          log("name via class call: " + loadedClass.getCanonicalName());
+          log("methods: " + Arrays.toString(loadedClass.getDeclaredMethods()));
+          log("loading class successful for ... :" + className);
 
-        Class<?> aClass = getClass().getClassLoader().loadClass(className);
+          return loadedClass;
+        }
+      });
 
-        System.err.println("getClass().getClassLoader() "+getClass().getClassLoader());
-        System.err.println("maybe try inspecting loaded class");
-        System.err.println("name via class call: "+aClass.getCanonicalName());
-        System.err.println("methods: "+ Arrays.toString(aClass.getDeclaredMethods()));
-        System.err.println("loading class successful for ... :"+className);
-
-        return aClass;
-      }
-    });
-
-
-
-            }
-          },
-          AccessController.getContext()
-      );
-
-    } catch (/*ClassNotFoundException | */NoClassDefFoundError e) {
+    } catch (NoClassDefFoundError | ClassNotFoundException e) {
       throw new SpecException(specString,
           String.format("Class %s not found in classpath.", className), e);
     } catch (LinkageError e) {
@@ -145,6 +130,33 @@ class SpecParser {
           String.format("Error initializing %s.",className), e);
     }
 
+  }
+
+  private <T> T maybeWithSecurityManagerContext(final String className, final Callable<T> callable) throws Exception {
+    SecurityManager securityManager = System.getSecurityManager();
+    // skip if there is no security manager
+    if (securityManager == null) {
+      return callable.call();
+    }
+    final JSecMgr jsecMgr = (JSecMgr) securityManager;
+
+    return AccessController.doPrivileged(
+        new PrivilegedExceptionAction<T>() {
+          @Override
+          public T run() throws Exception {
+
+
+            return jsecMgr.withSettings(
+                new JSecMgr.SomeTestSecurityContext(className,"static"),
+                callable);
+          }
+        },
+        AccessController.getContext()
+    );
+  }
+
+  private static void log(String msg) {
+    logger.fine(msg);
   }
 
   /**

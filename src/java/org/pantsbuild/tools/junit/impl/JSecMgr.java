@@ -8,8 +8,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.logging.Logger;
 
 public class JSecMgr extends SecurityManager {
+
+  private static Logger logger = Logger.getLogger("pants-junit-sec-mgr");
 
   // these are going to be overridden because multiple tests own a classname, so the lookup needs
   // to be by class then method
@@ -58,6 +61,10 @@ public class JSecMgr extends SecurityManager {
   //              localhost
   //   allow all
   //
+  enum SystemExitHandling {
+    allow,
+    disallow
+  }
   // System.exit
   //   disallow
   //   allow
@@ -162,7 +169,7 @@ public class JSecMgr extends SecurityManager {
   }
 
   private void log(String methodName, String msg) {
-    System.err.println("---" + methodName + ":" + msg);
+    logger.fine("---" + methodName + ":" + msg);
   }
 
   private boolean hadSecIssue(TestSecurityContext testSecurityContext) {

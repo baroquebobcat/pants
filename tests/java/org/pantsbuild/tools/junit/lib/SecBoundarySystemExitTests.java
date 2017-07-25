@@ -9,22 +9,22 @@ import org.junit.Test;
 public class SecBoundarySystemExitTests {
 
   @BeforeClass
-  public static void wut() {
+  public static void beforeAll() {
     System.out.println("=before class.");
   }
 
   @AfterClass
-  public static void after() {
+  public static void afterAll() {
     System.out.println("=after class.");
   }
 
   @Before
-  public void wut2() {
+  public void beforeEach() {
     System.out.println("==before.");
   }
 
   @After
-  public void after2() {
+  public void afterEach() {
     System.out.println("==after.");
   }
 
@@ -65,6 +65,7 @@ public class SecBoundarySystemExitTests {
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
+        System.out.println("dangling thread now exiting");
         System.exit(0);
       }
     });
