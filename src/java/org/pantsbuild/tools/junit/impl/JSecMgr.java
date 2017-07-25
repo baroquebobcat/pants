@@ -77,7 +77,6 @@ public class JSecMgr extends SecurityManager {
   // disallow network access
 
 
-
   // scheme.
   //   sets a thread local with the testSecurityContext
   //   if a thread is created, injects the testSecurityContext into its thread local table when it
@@ -106,7 +105,7 @@ public class JSecMgr extends SecurityManager {
     if (testSecurityContext == null) {
       return null;
     }
-    log("securityIssue", "                                 "+ testSecurityContext.getFailures());
+    log("securityIssue", "                                 " + testSecurityContext.getFailures());
     return testSecurityContext.getFailures().get(0);
   }
 
@@ -150,14 +149,14 @@ public class JSecMgr extends SecurityManager {
     //String methodNameFromThreadGroup = split[2];
     TestSecurityContext contextFromThreadGroup = getContextForClassName(classNameFromThreadGroup);
     if (contextFromThreadGroup != null) {
-      log("lookupContext", "found via thread group: "+threadGroupName);
+      log("lookupContext", "found via thread group: " + threadGroupName);
       return contextFromThreadGroup;
     } else {
       log("lookupContext", " not found thread group: " + threadGroupName);
-      log("lookupContext", " available "+classNameToSettings.keySet());
+      log("lookupContext", " available " + classNameToSettings.keySet());
     }
 
-    for (Class<?> c :getClassContext()) {
+    for (Class<?> c : getClassContext()) {
       // this will no longer match.
       TestSecurityContext testSecurityContext = getContextForClassName(c.getName());
       if (testSecurityContext != null) {
@@ -207,8 +206,7 @@ public class JSecMgr extends SecurityManager {
     endTest();
   }
 
-  public <V> V withSettings(SomeTestSecurityContext context, Callable<V> callable) throws Exception
-  {
+  public <V> V withSettings(SomeTestSecurityContext context, Callable<V> callable) throws Exception {
     startTest(context);
     V result = callable.call();
     endTest();
