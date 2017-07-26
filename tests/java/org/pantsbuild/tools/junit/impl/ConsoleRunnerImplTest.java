@@ -90,8 +90,17 @@ public class ConsoleRunnerImplTest {
     return runTests(Lists.newArrayList(testClass.getCanonicalName()), false, securityConfig);
   }
 
-  private String runTests(Class testClass, boolean shouldFail, JSecMgrConfig config) {
-    return runTests(Lists.newArrayList(testClass.getCanonicalName()), shouldFail, config);
+  private String runTestExpectingFailure(Class<?> testClass) {
+    JSecMgrConfig securityConfig = new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
+    return runTests(Lists.newArrayList(testClass.getCanonicalName()), true, securityConfig);
+  }
+
+  private String runTestsExpectingSuccess(JSecMgrConfig secMgrConfig, Class<?> testClass) {
+    return runTests(Lists.newArrayList(testClass.getCanonicalName()), false, secMgrConfig);
+  }
+
+  private String runTestsExpectingFailure(JSecMgrConfig secMgrConfig, Class<?> testClass) {
+    return runTests(Lists.newArrayList(testClass.getCanonicalName()), true, secMgrConfig);
   }
 
   private String runTests(List<String> tests, boolean shouldFail, JSecMgrConfig config) {
@@ -176,16 +185,9 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
 
-  private String runTestExpectingFailure(Class<?> testClass) {
-    JSecMgrConfig securityConfig = new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
-    return runTests(Lists.newArrayList(testClass.getCanonicalName()), true, securityConfig);
-  }
-
   @Test
   public void testFailSystemExit() {
-    String output = runTests(SecBoundarySystemExitTests.class,
-        true,
-        new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.allowAll));
+    String output = runTestsExpectingFailure(new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.allowAll), SecBoundarySystemExitTests.class);
     String testClass = "org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests";
     assertThat(output, containsString("directSystemExit(" + testClass + ")"));
     assertThat(output, containsString("catchesSystemExit(" + testClass + ")"));
@@ -198,9 +200,7 @@ public class ConsoleRunnerImplTest {
 
   @Test
   public void testDisallowDanglingThreadStartedInTestCase() {
-    String output = runTests(SecDanglingThreadFromTestCase.class,
-        true,
-        new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads));
+    String output = runTestsExpectingFailure(new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads), SecDanglingThreadFromTestCase.class);
     String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
     // TODO This shouldn't use a java.lang.SecurityException for the failure
     // Also could say where the thread was started.
@@ -212,9 +212,8 @@ public class ConsoleRunnerImplTest {
 
   @Test
   public void testWhenDanglingThreadsAllowedPassOnThreadStartedInTestCase() {
-    String output = runTests(SecDanglingThreadFromTestCase.class,
-        false,
-        new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.allowAll));
+    JSecMgrConfig secMgrConfig = new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.allowAll);
+    String output = runTestsExpectingSuccess(secMgrConfig, SecDanglingThreadFromTestCase.class);
     assertThat(output, containsString("OK (1 test)"));
   }
   // TODO
@@ -236,11 +235,10 @@ public class ConsoleRunnerImplTest {
     // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
     // I think it should either end with 0 tests run 1 error, or
     // 2 run, 2 error, with a better error than ExceptionInInitializerError
-    String output = runTests(SecStaticSysExitTestCase.class,
-        true,
-        new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads));
-    String testClass = "org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase";
-    //assertThat(output, containsString("startedThread(" + testClass + ")"));
+    Class<?> testClass = SecStaticSysExitTestCase.class;
+    String output = runTestsExpectingFailure(new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads), testClass);
+
+    assertThat(output, containsString("startedThread(" + testClass.getCanonicalName() + ")"));
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, containsString("Tests run: 2,  Failures: 2"));
   }
