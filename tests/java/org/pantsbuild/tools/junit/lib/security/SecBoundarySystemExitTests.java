@@ -1,4 +1,4 @@
-package org.pantsbuild.tools.junit.lib;
+package org.pantsbuild.tools.junit.lib.security;
 
 import org.junit.After;
 import org.junit.AfterClass;

@@ -24,9 +24,9 @@ import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
 import org.pantsbuild.tools.junit.lib.OutputModeTest;
-import org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests;
-import org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase;
-import org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase;
+import org.pantsbuild.tools.junit.lib.security.SecBoundarySystemExitTests;
+import org.pantsbuild.tools.junit.lib.security.SecDanglingThreadFromTestCase;
+import org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.not;
@@ -237,7 +237,7 @@ public class ConsoleRunnerImplTest {
     // java.lang.ExceptionInInitializerError
     // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
     // ... 50 lines ...
-    // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
+    // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
     // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
     // I think it should either end with 0 tests run 1 error, or
     // 2 run, 2 error, with a better error than ExceptionInInitializerError
