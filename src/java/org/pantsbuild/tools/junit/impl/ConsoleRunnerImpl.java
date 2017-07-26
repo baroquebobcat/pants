@@ -904,7 +904,6 @@ public class ConsoleRunnerImpl {
       }
     }
 
-
     runner.run(tests);
   }
 

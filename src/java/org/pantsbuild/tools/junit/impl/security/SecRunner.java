@@ -53,21 +53,21 @@ public class SecRunner extends Runner {
     private final JSecMgr secMgr;
     // think I need the RunNofifier here after all to trigger a failure.
 
-    public SecListener(RunNotifier runNotifier, JSecMgr secMgr) {
+    SecListener(RunNotifier runNotifier, JSecMgr secMgr) {
       this.runNotifier = runNotifier;
       this.secMgr = secMgr;
     }
+
     @Override
     public void testRunStarted(Description description) throws Exception {
       // might want to have a nested settings here in the manager
       super.testRunStarted(description);
-      //secMgr.startTestClass(new JSecMgr.TestSecurityContext(description.getClassName()));
+      //secMgr.startTestClass(new JSecMgr.SuiteTestSecurityContext(description.getClassName()));
     }
 
     @Override
     public void testRunFinished(Result result) throws Exception {
       for (Map.Entry<Description, TestState> descriptionTestStateEntry : tests.entrySet()) {
-        // probably need to print our own trailer for test failures here
         if (descriptionTestStateEntry.getValue() == TestState.danglingThreads) {
           if (secMgr.hadSecIssue(descriptionTestStateEntry.getKey().getClassName())) {
             log("found sec issue in dangling thread test.");
