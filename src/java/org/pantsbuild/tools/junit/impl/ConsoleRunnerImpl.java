@@ -52,6 +52,7 @@ import org.pantsbuild.args4j.InvalidCmdLineArgumentException;
 import org.pantsbuild.junit.annotations.TestParallel;
 import org.pantsbuild.junit.annotations.TestSerial;
 import org.pantsbuild.tools.junit.impl.experimental.ConcurrentComputer;
+import org.pantsbuild.tools.junit.impl.security.JSecMgr;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 

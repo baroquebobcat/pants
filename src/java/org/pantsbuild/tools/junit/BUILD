@@ -26,7 +26,7 @@ java_library(
 )
 
 java_library(name='sec-mgr',
-             sources=['impl/JSecMgr.java'],
+             sources=globs('impl/security/*.java'),
              dependencies=[],
              platform='java7',)
 

@@ -18,6 +18,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.Result;
 import org.junit.runner.notification.RunListener;
+import org.pantsbuild.tools.junit.impl.security.JSecMgr;
 import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
@@ -234,7 +235,7 @@ public class ConsoleRunnerImplTest {
     // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
     // ... 50 lines ...
     // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
-    // at org.pantsbuild.tools.junit.impl.JSecMgr.checkExit(JSecMgr.java:257)
+    // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
     // I think it should either end with 0 tests run 1 error, or
     // 2 run, 2 error, with a better error than ExceptionInInitializerError
     String output = runTests(SecStaticSysExitTestCase.class,

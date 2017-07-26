@@ -1,4 +1,4 @@
-package org.pantsbuild.tools.junit.impl;
+package org.pantsbuild.tools.junit.impl.security;
 
 import java.io.PrintStream;
 import java.security.Permission;
@@ -19,7 +19,7 @@ public class JSecMgr extends SecurityManager {
   private final Map<String, TestSecurityContext> classNameToSettings = new HashMap<>();
   private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
 
-  final JSecMgrConfig config;
+  public final JSecMgrConfig config;
   private final PrintStream out;
 
   // lifecycle
@@ -62,13 +62,13 @@ public class JSecMgr extends SecurityManager {
   //   allow all
   //
 
-  enum SystemExitHandling {
+  public enum SystemExitHandling {
     // allow tests to call system exit. Not sure why you'd want that, but ...
     allow,
     disallow
   }
 
-  enum ThreadHandling {
+  public enum ThreadHandling {
     // Allow threads, and allow them to live indefinitely.
     allowAll,
     // Do not allow threads to be started via tests.
@@ -110,7 +110,7 @@ public class JSecMgr extends SecurityManager {
   // and java.io.SerializablePermission.
 
 
-  JSecMgr(JSecMgrConfig config, PrintStream out) {
+  public JSecMgr(JSecMgrConfig config, PrintStream out) {
     super();
     this.config = config;
     this.out = out;
@@ -303,7 +303,7 @@ public class JSecMgr extends SecurityManager {
     private final SystemExitHandling systemExitHandling;
     private final ThreadHandling threadHandling;
 
-    JSecMgrConfig(SystemExitHandling systemExitHandling, ThreadHandling threadHandling) {
+    public JSecMgrConfig(SystemExitHandling systemExitHandling, ThreadHandling threadHandling) {
       this.systemExitHandling = systemExitHandling;
       this.threadHandling = threadHandling;
     }

@@ -17,6 +17,8 @@ import java.util.logging.Logger;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 
+import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+
 /**
  * Takes strings passed to the command line representing packages or individual methods
  * and returns a parsed Spec.  Each Spec represents a single class, so individual methods

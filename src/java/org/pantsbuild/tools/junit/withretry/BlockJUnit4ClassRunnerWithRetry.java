@@ -12,7 +12,7 @@ import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.Statement;
-import org.pantsbuild.tools.junit.impl.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.JSecMgr;
 
 /**
  * A subclass of BlockJUnit4ClassRunner that supports retrying failing tests, up to the
