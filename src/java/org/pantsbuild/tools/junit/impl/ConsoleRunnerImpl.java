@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +52,7 @@ import org.pantsbuild.junit.annotations.TestParallel;
 import org.pantsbuild.junit.annotations.TestSerial;
 import org.pantsbuild.tools.junit.impl.experimental.ConcurrentComputer;
 import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.JSecMgrConfig;
 import org.pantsbuild.tools.junit.impl.security.SecRunner;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -866,9 +866,9 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr.JSecMgrConfig secMgrConfig = new JSecMgr.JSecMgrConfig(
-        JSecMgr.SystemExitHandling.allow,
-        JSecMgr.ThreadHandling.disallowDanglingTestCaseThreads);
+    JSecMgrConfig secMgrConfig = new JSecMgrConfig(
+        JSecMgrConfig.SystemExitHandling.allow,
+        JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
     JSecMgr secMgr = new JSecMgr(secMgrConfig, out);
     System.setSecurityManager(secMgr);
 

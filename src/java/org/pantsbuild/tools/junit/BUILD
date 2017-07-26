@@ -27,7 +27,7 @@ java_library(
 
 java_library(name='sec-mgr',
              sources=globs('impl/security/*.java'),
-             dependencies=[],
+             dependencies=['3rdparty:junit'],
              platform='java7',)
 
 jvm_binary(
