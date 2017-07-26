@@ -188,12 +188,15 @@ public class ConsoleRunnerImplTest {
 
   @Test
   public void testFailSystemExit() {
-    String output = runTestsExpectingFailure(new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.allowAll), SecBoundarySystemExitTests.class);
-    String testClass = "org.pantsbuild.tools.junit.lib.SecBoundarySystemExitTests";
-    assertThat(output, containsString("directSystemExit(" + testClass + ")"));
-    assertThat(output, containsString("catchesSystemExit(" + testClass + ")"));
-    assertThat(output, containsString("exitInJoinedThread(" + testClass + ")"));
-    assertThat(output, containsString("exitInNotJoinedThread(" + testClass + ")"));
+    Class<SecBoundarySystemExitTests> testClass = SecBoundarySystemExitTests.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.allowAll),
+        testClass);
+    String testClassName = testClass.getCanonicalName();
+    assertThat(output, containsString("directSystemExit(" + testClassName + ")"));
+    assertThat(output, containsString("catchesSystemExit(" + testClassName + ")"));
+    assertThat(output, containsString("exitInJoinedThread(" + testClassName + ")"));
+    assertThat(output, containsString("exitInNotJoinedThread(" + testClassName + ")"));
 
     assertThat(output, containsString("There were 4 failures:"));
     assertThat(output, containsString("Tests run: 5,  Failures: 4"));
@@ -201,11 +204,13 @@ public class ConsoleRunnerImplTest {
 
   @Test
   public void testDisallowDanglingThreadStartedInTestCase() {
-    String output = runTestsExpectingFailure(new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestCaseThreads), SecDanglingThreadFromTestCase.class);
-    String testClass = "org.pantsbuild.tools.junit.lib.SecDanglingThreadFromTestCase";
+    Class<?> testClass = SecDanglingThreadFromTestCase.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestCaseThreads),
+        testClass);
     // TODO This shouldn't use a java.lang.SecurityException for the failure
     // Also could say where the thread was started.
-    assertThat(output, containsString("startedThread(" + testClass + ")"));
+    assertThat(output, containsString("startedThread(" + testClass.getCanonicalName() + ")"));
     //assertThat(output, containsString("at foo"));
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
