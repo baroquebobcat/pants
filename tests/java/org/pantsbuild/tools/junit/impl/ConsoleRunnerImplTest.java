@@ -13,11 +13,13 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.Result;
 import org.junit.runner.notification.RunListener;
+import org.junit.runner.notification.StoppedByUserException;
 import org.pantsbuild.tools.junit.impl.security.JSecMgr;
 import org.pantsbuild.tools.junit.impl.security.JSecMgrConfig;
 import org.pantsbuild.tools.junit.lib.AllFailingTest;
@@ -27,6 +29,9 @@ import org.pantsbuild.tools.junit.lib.OutputModeTest;
 import org.pantsbuild.tools.junit.lib.security.SecBoundarySystemExitTests;
 import org.pantsbuild.tools.junit.lib.security.SecDanglingThreadFromTestCase;
 import org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase;
+import org.pantsbuild.tools.junit.lib.security.ThreadStartedInBeforeClassAndJoinedAfterTest;
+import org.pantsbuild.tools.junit.lib.security.ThreadStartedInBeforeClassAndNotJoinedAfterTest;
+import org.pantsbuild.tools.junit.lib.security.ThreadStartedInBeforeTest;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.not;
@@ -135,9 +140,15 @@ public class ConsoleRunnerImplTest {
         if (shouldFail) {
           fail("Expected RuntimeException");
         }
-      } catch (RuntimeException e) {
+      } catch (StoppedByUserException e) {
         originalOut.println("runtime e " + e);
         if (!shouldFail) {
+          throw e;
+        }
+      } catch (RuntimeException e) {
+        originalOut.println("runtime e " + e);
+
+        if (!shouldFail || !(e.getMessage() != null && e.getMessage().contains("ConsoleRunner exited with status"))) {
           throw e;
         }
       }
@@ -222,6 +233,56 @@ public class ConsoleRunnerImplTest {
     String output = runTestsExpectingSuccess(secMgrConfig, SecDanglingThreadFromTestCase.class);
     assertThat(output, containsString("OK (1 test)"));
   }
+
+  @Test
+  public void testThreadStartedInBeforeTestAndJoinedAfter() {
+    // Expect that of the two tests, only the test that fails due to an assertion failure will fail.
+    // And that it fails due to that failure
+    Class<?> testClass = ThreadStartedInBeforeTest.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestCaseThreads),
+        testClass);
+    // TODO This shouldn't use a java.lang.SecurityException for the failure
+    // Also could say where the thread was started.
+    assertThat(output, containsString("failing(" + testClass.getCanonicalName() + ")"));
+    assertThat(output, containsString("java.lang.AssertionError: failing"));
+    assertThat(output, containsString("There was 1 failure:"));
+    assertThat(output, containsString("Tests run: 2,  Failures: 1"));
+  }
+
+  @Ignore
+  @Test
+  public void testThreadStartedInBeforeClassAndJoinedAfterClassWithPerSuiteThreadLife() {
+    // Expect that of the two tests, only the test that fails due to an assertion failure will fail.
+    // And that it fails due to that failure.
+    Class<?> testClass = ThreadStartedInBeforeClassAndJoinedAfterTest.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestSuiteThreads),
+        testClass);
+    // TODO This shouldn't use a java.lang.SecurityException for the failure
+    // Also could say where the thread was started.
+    assertThat(output, containsString("failing(" + testClass.getCanonicalName() + ")"));
+    assertThat(output, containsString("There was 1 failure:"));
+    assertThat(output, containsString("Tests run: 2,  Failures: 1"));
+  }
+
+  @Ignore
+  @Test
+  public void testThreadStartedInBeforeClassAndNotJoinedAfterClassWithPerSuiteThreadLife() {
+    // Expect that of the two tests, only the test that fails due to an assertion failure will fail.
+    // And that it fails due to that failure.
+    Class<?> testClass = ThreadStartedInBeforeClassAndNotJoinedAfterTest.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestSuiteThreads),
+        testClass);
+    // TODO This shouldn't use a java.lang.SecurityException for the failure
+    // Also could say where the thread was started.
+    assertThat(output, containsString("failingxx(" + testClass.getCanonicalName() + ")"));
+    //assertThat(output, containsString("at foo"));
+    assertThat(output, containsString("There were 2 failures:"));
+    assertThat(output, containsString("Tests run: 2,  Failures: 2"));
+  }
+
   // TODO
   // - Flag for per class thread lifetimes
   // -- Allow thread that lives beyond test case
@@ -248,6 +309,7 @@ public class ConsoleRunnerImplTest {
 
     assertThat(output, containsString("passingTest(" + testClass.getCanonicalName() + ")"));
     assertThat(output, containsString("System.exit calls are not allowed"));
+    // should be 0 tests run 1 failure/error
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, containsString("Tests run: 2,  Failures: 2"));
   }

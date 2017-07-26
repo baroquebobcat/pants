@@ -62,7 +62,8 @@ public class SecRunner extends Runner {
     public void testRunStarted(Description description) throws Exception {
       // might want to have a nested settings here in the manager
       super.testRunStarted(description);
-      //secMgr.startTestClass(new JSecMgr.SuiteTestSecurityContext(description.getClassName()));
+      //secMgr.startTestClass(new
+      //    TestSecurityContext.SuiteTestSecurityContext(description.getClassName()));
     }
 
     @Override

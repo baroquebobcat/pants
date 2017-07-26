@@ -9,16 +9,16 @@ public class SecDanglingThreadFromTestCase {
       @Override
       public void run() {
         try {
-          System.out.println("waiting 1 sec");
+          System.err.println("waiting 1 sec");
           Thread.sleep(1000);
-          System.out.println("ending thread");
+          System.err.println("ending thread");
         } catch (InterruptedException e) {
           // ignored
-          System.out.println("caught interrupt");
+          System.err.println("caught interrupt");
         }
       }
     });
     thread.start();
-    System.out.println("got here");
+    System.err.println("got here");
   }
 }

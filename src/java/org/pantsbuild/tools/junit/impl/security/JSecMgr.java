@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
+import static org.pantsbuild.tools.junit.impl.security.TestSecurityContext.*;
+
 public class JSecMgr extends SecurityManager {
 
   private static Logger logger = Logger.getLogger("pants-junit-sec-mgr");
@@ -95,7 +97,7 @@ public class JSecMgr extends SecurityManager {
     return testSecurityContext.getFailures().get(0);
   }
 
-  void startTest(TestSecurityContext.TestCaseSecurityContext testSecurityContext) {
+  void startTest(TestCaseSecurityContext testSecurityContext) {
     //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
     TestSecurityContext andSet = settingsRef.get();
     settingsRef.set(testSecurityContext);
@@ -105,6 +107,10 @@ public class JSecMgr extends SecurityManager {
     }
   }
 
+  /*void startTestClass(SuiteTestSecurityContext suiteTestSecurityContext) {
+
+  }
+*/
   boolean hasDanglingThreads(String className) {
     TestSecurityContext testSecurityContext = getContextForClassName(className);
     if (testSecurityContext == null) {
@@ -130,9 +136,14 @@ public class JSecMgr extends SecurityManager {
     }
 
     String threadGroupName = Thread.currentThread().getThreadGroup().getName();
-    String[] split = threadGroupName.split("-");
-    String classNameFromThreadGroup = split[0];
-    //String methodNameFromThreadGroup = split[2];
+    ContextKey contextKey = ContextKey.parseFromThreadGroupName(threadGroupName);
+    String classNameFromThreadGroup = contextKey.getClassName();
+//    assert classNameFromThreadGroup.equals(classNameFromThreadGroupOld);
+//    if (!classNameFromThreadGroup.equals(classNameFromThreadGroupOld)) {
+//      throw new RuntimeException("wut old "+classNameFromThreadGroupOld + " new "+classNameFromThreadGroup);
+//    }
+
+
     TestSecurityContext contextFromThreadGroup = getContextForClassName(classNameFromThreadGroup);
     if (contextFromThreadGroup != null) {
       log("lookupContext", "found via thread group: " + threadGroupName);
@@ -186,13 +197,13 @@ public class JSecMgr extends SecurityManager {
     settingsRef.remove();
   }
 
-  public void withSettings(TestSecurityContext.TestCaseSecurityContext testSecurityContext, Runnable runnable) {
+  public void withSettings(TestCaseSecurityContext testSecurityContext, Runnable runnable) {
     startTest(testSecurityContext);
     runnable.run();
     endTest();
   }
 
-  public <V> V withSettings(TestSecurityContext.TestCaseSecurityContext context, Callable<V> callable) throws Exception {
+  public <V> V withSettings(TestCaseSecurityContext context, Callable<V> callable) throws Exception {
     startTest(context);
     V result = callable.call();
     endTest();
@@ -299,6 +310,5 @@ public class JSecMgr extends SecurityManager {
   public void checkWrite(String filename) {
 
   }
-
 
 }
