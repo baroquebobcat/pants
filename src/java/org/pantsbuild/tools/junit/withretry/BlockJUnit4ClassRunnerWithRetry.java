@@ -13,6 +13,7 @@ import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.Statement;
 import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.TestSecurityContext;
 
 /**
  * A subclass of BlockJUnit4ClassRunner that supports retrying failing tests, up to the
@@ -54,7 +55,7 @@ public class BlockJUnit4ClassRunnerWithRetry extends BlockJUnit4ClassRunner {
     @Override
     public void evaluate() throws Throwable {
       ((JSecMgr)System.getSecurityManager()).withSettings(
-          new JSecMgr.TestCaseSecurityContext("something", "somemethod"), new Callable<Void>() {
+          new TestSecurityContext.TestCaseSecurityContext("something", "somemethod"), new Callable<Void>() {
         @Override
         public Void call() {
           try {

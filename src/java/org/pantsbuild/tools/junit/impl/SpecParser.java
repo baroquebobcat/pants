@@ -18,6 +18,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 
 import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.TestSecurityContext;
 
 /**
  * Takes strings passed to the command line representing packages or individual methods
@@ -149,7 +150,7 @@ class SpecParser {
             @Override
             public T run() throws Exception {
               return jsecMgr.withSettings(
-                  new JSecMgr.TestCaseSecurityContext(className, "static"),
+                  new TestSecurityContext.TestCaseSecurityContext(className, "static"),
                   callable);
             }
           },

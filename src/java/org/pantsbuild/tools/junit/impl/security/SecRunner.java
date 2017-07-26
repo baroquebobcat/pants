@@ -91,7 +91,7 @@ public class SecRunner extends Runner {
     public void testStarted(Description description) throws Exception {
       super.testStarted(description);
       log("test-started: "+description);
-      secMgr.startTest(new JSecMgr.TestCaseSecurityContext(description.getClassName(),
+      secMgr.startTest(new TestSecurityContext.TestCaseSecurityContext(description.getClassName(),
                                                      description.getMethodName()));
       tests.put(description, TestState.started);
     }
