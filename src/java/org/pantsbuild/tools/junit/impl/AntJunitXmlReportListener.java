@@ -10,7 +10,6 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.FilterWriter;
 import java.io.IOException;
 import java.io.Writer;
@@ -233,14 +232,10 @@ class AntJunitXmlReportListener extends RunListener {
       testClass = null;
     }
 
-    TestSuite(Description test) {
+    TestSuite(Description test, String hostname) {
       name = test.getClassName();
       testClass = test.getTestClass();
-      try {
-        hostname = InetAddress.getLocalHost().getHostName();
-      } catch (UnknownHostException e) {
-        hostname = "localhost";
-      }
+      this.hostname = hostname;
     }
 
     public int getErrors() {
@@ -332,6 +327,24 @@ class AntJunitXmlReportListener extends RunListener {
     }
   }
 
+  // NB: When a security manager is enabled, collecting the localhost name
+  // becomes more expensive.
+  // Since it's something that is unlikely to change, this does it in the static context.
+  //
+  private static String localhostName;
+
+  static {
+    try {
+      localhostName = InetAddress.getLocalHost().getHostName();
+    } catch (UnknownHostException e) {
+      localhostName = "localhost";
+
+    }
+  }
+  private static String getHostname() {
+    return localhostName;
+  }
+
   private final Map<String, TestSuite> suites = Maps.newHashMap();
   private final Map<String, TestCase> cases = Maps.newHashMap();
 
@@ -363,7 +376,7 @@ class AntJunitXmlReportListener extends RunListener {
         String testClass = test.getClassName();
         TestSuite suite = suites.get(testClass);
         if (suite == null) {
-          suite = new TestSuite(test);
+          suite = new TestSuite(test, getHostname());
           suites.put(testClass, suite);
         }
         TestCase testCase = new TestCase(test);
@@ -580,7 +593,7 @@ class AntJunitXmlReportListener extends RunListener {
     }
     TestSuite unknownSuite = getTestSuiteFor(description);
     if (unknownSuite == null) {
-      unknownSuite = new TestSuite(description);
+      unknownSuite = new TestSuite(description, getHostname());
       suites.put(description.getClassName(), unknownSuite);
     }
     unknownSuite.incrementFailures();
