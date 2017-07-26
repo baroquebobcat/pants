@@ -10,11 +10,11 @@ public class JSecMgrConfig {
     this.threadHandling = threadHandling;
   }
 
-  public boolean disallowSystemExit() {
+  boolean disallowSystemExit() {
     return systemExitHandling == SystemExitHandling.disallow;
   }
 
-  public boolean disallowDanglingThread() {
+  boolean disallowDanglingThread() {
     // TODO handle other thread handling models.
     return threadHandling != ThreadHandling.allowAll;
   }
@@ -43,7 +43,6 @@ public class JSecMgrConfig {
     // threads started in a context, case or suite can live as long as the context does, but it's an
     // error if they live past it.
     nestedButDanglingDisallowed
-
 
     // warn on threads that continue to live
   }

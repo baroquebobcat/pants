@@ -85,17 +85,9 @@ public class ConsoleRunnerImplTest {
     useExperimentalRunner = false;
   }
 
-  private String runTest(Class testClass) {
-    return runTests(Lists.newArrayList(testClass.getCanonicalName()), false);
-  }
-
-  private String runTest(Class testClass, boolean shouldFail) {
-    return runTests(Lists.newArrayList(testClass.getCanonicalName()), shouldFail);
-  }
-
-  private String runTests(List<String> tests, boolean shouldFail) {
+  private String runTestExpectingSuccess(Class testClass) {
     JSecMgrConfig securityConfig = new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
-    return runTests(tests, shouldFail, securityConfig);
+    return runTests(Lists.newArrayList(testClass.getCanonicalName()), false, securityConfig);
   }
 
   private String runTests(Class testClass, boolean shouldFail, JSecMgrConfig config) {
@@ -174,14 +166,19 @@ public class ConsoleRunnerImplTest {
   @Test
   public void testFailFast() {
     failFast = false;
-    String output = runTest(AllFailingTest.class, true);
+    String output = runTestExpectingFailure(AllFailingTest.class);
     assertThat(output, containsString("There were 4 failures:"));
     assertThat(output, containsString("Tests run: 4,  Failures: 4"));
 
     failFast = true;
-    output = runTest(AllFailingTest.class, true);
+    output = runTestExpectingFailure(AllFailingTest.class);
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
+  }
+
+  private String runTestExpectingFailure(Class<?> testClass) {
+    JSecMgrConfig securityConfig = new JSecMgrConfig(JSecMgrConfig.SystemExitHandling.disallow, JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
+    return runTests(Lists.newArrayList(testClass.getCanonicalName()), true, securityConfig);
   }
 
   @Test
@@ -252,13 +249,13 @@ public class ConsoleRunnerImplTest {
   public void testFailFastWithMultipleThreads() {
     failFast = false;
     parallelThreads = 8;
-    String output = runTest(AllFailingTest.class, true);
+    String output = runTestExpectingFailure(AllFailingTest.class);
     assertThat(output, containsString("There were 4 failures:"));
     assertThat(output, containsString("Tests run: 4,  Failures: 4"));
 
     failFast = true;
     parallelThreads = 8;
-    output = runTest(AllFailingTest.class, true);
+    output = runTestExpectingFailure(AllFailingTest.class);
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("Tests run: 1,  Failures: 1"));
   }
@@ -266,13 +263,13 @@ public class ConsoleRunnerImplTest {
   @Test
   public void testPerTestTimer() {
     perTestTimer = false;
-    String output = runTest(AllPassingTest.class);
+    String output = runTestExpectingSuccess(AllPassingTest.class);
     assertThat(output, containsString("...."));
     assertThat(output, containsString("OK (4 tests)"));
     assertThat(output, not(containsString("AllPassingTest")));
 
     perTestTimer = true;
-    output = runTest(AllPassingTest.class);
+    output = runTestExpectingSuccess(AllPassingTest.class);
 
     assertThat(output, containsString(
         "org.pantsbuild.tools.junit.lib.AllPassingTest#testPassesOne"));
@@ -289,7 +286,7 @@ public class ConsoleRunnerImplTest {
   @Test
   public void testOutputMode() {
     outputMode = ConsoleRunnerImpl.OutputMode.ALL;
-    String output = runTest(OutputModeTest.class, true);
+    String output = runTestExpectingFailure(OutputModeTest.class);
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, containsString("Output from passing test"));
     assertThat(output, containsString("Output from failing test"));
@@ -300,7 +297,7 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 3,  Failures: 2"));
 
     outputMode = ConsoleRunnerImpl.OutputMode.FAILURE_ONLY;
-    output = runTest(OutputModeTest.class, true);
+    output = runTestExpectingFailure(OutputModeTest.class);
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, not(containsString("Output from passing test")));
     assertThat(output, containsString("Output from failing test"));
@@ -311,7 +308,7 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 3,  Failures: 2"));
 
     outputMode = ConsoleRunnerImpl.OutputMode.NONE;
-    output = runTest(OutputModeTest.class, true);
+    output = runTestExpectingFailure(OutputModeTest.class);
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, not(containsString("Output from passing test")));
     assertThat(output, not(containsString("Output from failing test")));
@@ -325,21 +322,21 @@ public class ConsoleRunnerImplTest {
   @Test
   public void testOutputModeExceptionInBefore() {
     outputMode = ConsoleRunnerImpl.OutputMode.ALL;
-    String output = runTest(ExceptionInSetupTest.class, true);
+    String output = runTestExpectingFailure(ExceptionInSetupTest.class);
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("java.lang.RuntimeException"));
     assertThat(output, containsString("Tests run: 0,  Failures: 1"));
     assertThat(output, not(containsString("Test mechanism")));
 
     outputMode = ConsoleRunnerImpl.OutputMode.FAILURE_ONLY;
-    output = runTest(ExceptionInSetupTest.class, true);
+    output = runTestExpectingFailure(ExceptionInSetupTest.class);
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("java.lang.RuntimeException"));
     assertThat(output, containsString("Tests run: 0,  Failures: 1"));
     assertThat(output, not(containsString("Test mechanism")));
 
     outputMode = ConsoleRunnerImpl.OutputMode.NONE;
-    output = runTest(ExceptionInSetupTest.class, true);
+    output = runTestExpectingFailure(ExceptionInSetupTest.class);
     assertThat(output, containsString("There was 1 failure:"));
     assertThat(output, containsString("java.lang.RuntimeException"));
     assertThat(output, containsString("Tests run: 0,  Failures: 1"));
@@ -358,7 +355,7 @@ public class ConsoleRunnerImplTest {
     }
     ConsoleRunnerImpl.addTestListener(new AbortInTestRunFinishedListener());
 
-    String output = runTest(AllPassingTest.class, true);
+    String output = runTestExpectingFailure(AllPassingTest.class);
     assertThat(output, containsString("OK (4 tests)"));
     assertThat(output, containsString("java.io.IOException: Bogus IOException"));
   }
