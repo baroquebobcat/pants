@@ -16,5 +16,5 @@ junit_tests(
     'tests/scala/org/pantsbuild/tools/junit/lib:scala-test-dep',
   ],
   sources=globs('*Test.java'),
-  timeout=180,
+  timeout=600,
 )

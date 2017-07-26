@@ -6,6 +6,7 @@ package org.pantsbuild.tools.junit.impl;
 import com.google.common.base.Optional;
 import java.lang.reflect.Method;
 import java.security.AccessController;
+import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
 import java.util.Collection;
@@ -127,7 +128,7 @@ class SpecParser {
       // The class may fail with some variant of RTE in its static initializers, trap these
       // and dump the bad spec in question to help narrow down issue.
       throw new SpecException(specString,
-          String.format("Error initializing %s.",className), e);
+          String.format("Error initializing %s. %s blah %s",className, e, e.getCause()), e);
     }
 
   }
@@ -139,20 +140,22 @@ class SpecParser {
       return callable.call();
     }
     final JSecMgr jsecMgr = (JSecMgr) securityManager;
-
-    return AccessController.doPrivileged(
-        new PrivilegedExceptionAction<T>() {
-          @Override
-          public T run() throws Exception {
-
-
-            return jsecMgr.withSettings(
-                new JSecMgr.SomeTestSecurityContext(className,"static"),
-                callable);
-          }
-        },
-        AccessController.getContext()
-    );
+    try {
+      // doPrivileged here allows us to wrap all
+      return AccessController.doPrivileged(
+          new PrivilegedExceptionAction<T>() {
+            @Override
+            public T run() throws Exception {
+              return jsecMgr.withSettings(
+                  new JSecMgr.TestCaseSecurityContext(className, "static"),
+                  callable);
+            }
+          },
+          AccessController.getContext()
+      );
+    } catch (PrivilegedActionException e) {
+      throw e.getException();
+    }
   }
 
   private static void log(String msg) {

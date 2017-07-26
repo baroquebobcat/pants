@@ -61,19 +61,36 @@ public class JSecMgr extends SecurityManager {
   //              localhost
   //   allow all
   //
+
   enum SystemExitHandling {
+    // allow tests to call system exit. Not sure why you'd want that, but ...
     allow,
     disallow
   }
-  // System.exit
-  //   disallow
-  //   allow
-  //
-  // Threads
-  //   disallow creation
-  //   fail if threads live beyond test case
-  //   fail if threads live beyond test suite
-  //   allow all
+
+  enum ThreadHandling {
+    // Allow threads, and allow them to live indefinitely.
+    allowAll,
+    // Do not allow threads to be started via tests.
+    disallow,
+
+    // disallow suites starting threads, but allow test cases to start them as long as they are
+    // killed before the end of the test case.
+    disallowDanglingTestCaseThreads,
+
+    // allow suites or test cases to start threads,
+    // but ensure they are killed at the end of the suite.
+    disallowDanglingTestSuiteThreads,
+
+    // Needs a better name, could be same as dangling suite mode.
+    // threads started in a context, case or suite can live as long as the context does, but it's an
+    // error if they live past it.
+    nestedButDanglingDisallowed
+
+
+    // warn on threads that continue to live
+  }
+
   // disallow network access
 
 
@@ -95,7 +112,6 @@ public class JSecMgr extends SecurityManager {
 
   JSecMgr(JSecMgrConfig config, PrintStream out) {
     super();
-    //getClassContext()
     this.config = config;
     this.out = out;
   }
@@ -109,7 +125,7 @@ public class JSecMgr extends SecurityManager {
     return testSecurityContext.getFailures().get(0);
   }
 
-  public void startTest(SomeTestSecurityContext testSecurityContext) {
+  public void startTest(TestCaseSecurityContext testSecurityContext) {
     //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
     TestSecurityContext andSet = settingsRef.get();
     settingsRef.set(testSecurityContext);
@@ -200,13 +216,13 @@ public class JSecMgr extends SecurityManager {
     settingsRef.remove();
   }
 
-  public void withSettings(SomeTestSecurityContext testSecurityContext, Runnable runnable) {
+  public void withSettings(TestCaseSecurityContext testSecurityContext, Runnable runnable) {
     startTest(testSecurityContext);
     runnable.run();
     endTest();
   }
 
-  public <V> V withSettings(SomeTestSecurityContext context, Callable<V> callable) throws Exception {
+  public <V> V withSettings(TestCaseSecurityContext context, Callable<V> callable) throws Exception {
     startTest(context);
     V result = callable.call();
     endTest();
@@ -282,17 +298,14 @@ public class JSecMgr extends SecurityManager {
   public void interruptDanglingThreads() {
   }
 
-
   public static class JSecMgrConfig {
 
-    private final boolean useThreadGroup;
     private final SystemExitHandling systemExitHandling;
-    private final boolean allowDanglingThread;
+    private final ThreadHandling threadHandling;
 
-    JSecMgrConfig(boolean useThreadGroup, SystemExitHandling systemExitHandling, boolean allowDanglingThread) {
-      this.useThreadGroup = useThreadGroup;
+    JSecMgrConfig(SystemExitHandling systemExitHandling, ThreadHandling threadHandling) {
       this.systemExitHandling = systemExitHandling;
-      this.allowDanglingThread = allowDanglingThread;
+      this.threadHandling = threadHandling;
     }
 
     public boolean disallowSystemExit() {
@@ -300,7 +313,8 @@ public class JSecMgr extends SecurityManager {
     }
 
     public boolean disallowDanglingThread() {
-      return !allowDanglingThread;
+      // TODO handle other thread handling models.
+      return threadHandling != ThreadHandling.allowAll;
     }
   }
 
@@ -322,15 +336,14 @@ public class JSecMgr extends SecurityManager {
     }
   }
 
-  public static class SomeTestSecurityContext implements TestSecurityContext {
+  public static class TestCaseSecurityContext implements TestSecurityContext {
 
     private String className;
     private ThreadGroup threadGroup;
     private final String methodName;
     private Exception failureException;
 
-
-    public SomeTestSecurityContext(String className, String methodName) {
+    public TestCaseSecurityContext(String className, String methodName) {
       this.className = className;
       this.threadGroup = new ThreadGroup(className + "-m-" + methodName + "-Threads");
       this.methodName = methodName;
@@ -357,7 +370,7 @@ public class JSecMgr extends SecurityManager {
 
     @Override
     public String toString() {
-      return "TestSecurityContext{" +
+      return "TestCaseSecurityContext{" +
           className + "#" + methodName +
           ", threadGroup=" + threadGroup +
           ", threadGroupActiveCt=" + threadGroup.activeCount() +

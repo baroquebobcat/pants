@@ -452,7 +452,7 @@ public class ConsoleRunnerImpl {
     public void testStarted(Description description) throws Exception {
       super.testStarted(description);
       log("test-started: "+description);
-      secMgr.startTest(new JSecMgr.SomeTestSecurityContext(description.getClassName(),
+      secMgr.startTest(new JSecMgr.TestCaseSecurityContext(description.getClassName(),
                                                      description.getMethodName()));
       tests.put(description, TestState.started);
     }
@@ -581,8 +581,6 @@ public class ConsoleRunnerImpl {
     if (testListener != null) {
       core.addListener(testListener);
     }
-
-    //core.addListener(new SecListener(runNotifier, secMgr));
 
     if (!outdir.exists() && !outdir.mkdirs()) {
       throw new IllegalStateException("Failed to create output directory: " + outdir);
@@ -1011,7 +1009,10 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr secMgr = new JSecMgr(new JSecMgr.JSecMgrConfig(true, JSecMgr.SystemExitHandling.allow, false), out);
+    JSecMgr.JSecMgrConfig secMgrConfig = new JSecMgr.JSecMgrConfig(
+        JSecMgr.SystemExitHandling.allow,
+        JSecMgr.ThreadHandling.disallowDanglingTestCaseThreads);
+    JSecMgr secMgr = new JSecMgr(secMgrConfig, out);
     System.setSecurityManager(secMgr);
 
 
