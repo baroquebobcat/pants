@@ -106,9 +106,9 @@ public class ConsoleRunnerImplTest {
 
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     PrintStream quoteOriginalOut = new PrintStream(outContent, true);
-    JSecMgr bofh = new JSecMgr(config, quoteOriginalOut);
+    JSecMgr jSecMgr = new JSecMgr(config, quoteOriginalOut);
     try {
-      System.setSecurityManager(bofh);
+      System.setSecurityManager(jSecMgr);
       ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
           failFast,
           outputMode,
@@ -124,7 +124,7 @@ public class ConsoleRunnerImplTest {
           quoteOriginalOut,
           System.err, // TODO, if there's an error reported on system err, it doesn't show up in
                       // the test failures.
-          bofh);
+          jSecMgr);
 
       try {
         runner.run(tests);
@@ -146,10 +146,10 @@ public class ConsoleRunnerImplTest {
     } finally {
 
       // there might be a better way to do this.
-      if (bofh.anyHasDanglingThreads()) {
+      if (jSecMgr.anyHasDanglingThreads()) {
         originalErr.println("had dangling threads, trying interrupt");
-        bofh.interruptDanglingThreads();
-        if (bofh.anyHasDanglingThreads()) {
+        jSecMgr.interruptDanglingThreads();
+        if (jSecMgr.anyHasDanglingThreads()) {
           originalErr.println("there are still remaining threads, sleeping");
           try {
             Thread.sleep(100);
