@@ -1,5 +1,6 @@
 package org.pantsbuild.tools.junit.impl.security;
 
+import java.io.FileDescriptor;
 import java.io.PrintStream;
 import java.security.Permission;
 import java.util.HashMap;
@@ -212,6 +213,7 @@ public class JSecMgr extends SecurityManager {
     if (deferPermission(perm)) {
       super.checkPermission(perm);
     }
+    // TODO disallow setSecurityManager if we are in a test context
   }
 
   @Override
@@ -266,6 +268,36 @@ public class JSecMgr extends SecurityManager {
       super.checkExit(status);
       throw ex;
     }
+  }
+
+  @Override
+  public void checkConnect(final String host, final int port) {
+
+  }
+
+  @Override
+  public void checkRead(FileDescriptor fd) {
+
+  }
+
+  @Override
+  public void checkRead(String filename, Object context) {
+
+  }
+
+  @Override
+  public void checkRead(String filename) {
+
+  }
+
+  @Override
+  public void checkWrite(FileDescriptor fd) {
+
+  }
+
+  @Override
+  public void checkWrite(String filename) {
+
   }
 
 
