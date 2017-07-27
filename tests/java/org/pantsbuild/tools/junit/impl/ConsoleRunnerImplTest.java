@@ -118,69 +118,82 @@ public class ConsoleRunnerImplTest {
     JSecMgr jSecMgr = new JSecMgr(config, quoteOriginalOut);
     try {
       System.setSecurityManager(jSecMgr);
-      ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
-          failFast,
-          outputMode,
-          xmlReport,
-          perTestTimer,
-          outdir,
-          defaultConcurrency,
-          parallelThreads,
-          testShard,
-          numTestShards,
-          numRetries,
-          useExperimentalRunner,
-          quoteOriginalOut,
-          System.err, // TODO, if there's an error reported on system err, it doesn't show up in
-                      // the test failures.
-          jSecMgr);
-
-      try {
-        runner.run(tests);
-        if (shouldFail) {
-          fail("Expected RuntimeException");
-        }
-      } catch (StoppedByUserException e) {
-        originalOut.println("runtime e " + e);
-        if (!shouldFail) {
-          throw e;
-        }
-      } catch (RuntimeException e) {
-        originalOut.println("runtime e " + e);
-
-        if (!shouldFail || !(e.getMessage() != null && e.getMessage().contains("ConsoleRunner exited with status"))) {
-          throw e;
-        }
-      }
-      quoteOriginalOut.flush();
-      try {
-        return outContent.toString(Charsets.UTF_8.toString());
-      } catch (UnsupportedEncodingException e) {
-        throw new RuntimeException(e);
-      }
+      return createAndRunConsoleRunner(tests, shouldFail, originalOut, outContent, quoteOriginalOut, jSecMgr);
     } finally {
-
       // there might be a better way to do this.
-      if (jSecMgr.anyHasDanglingThreads()) {
-        originalErr.println("had dangling threads, trying interrupt");
-        jSecMgr.interruptDanglingThreads();
-        if (jSecMgr.anyHasDanglingThreads()) {
-          originalErr.println("there are still remaining threads, sleeping");
-          try {
-            Thread.sleep(100);
-          } catch (InterruptedException e) {
-            // ignore
-          }
-        }
-      } else {
-        originalErr.println("no remaining threads");
-      }
+      waitForDanglingThreadsToFinish(originalErr, jSecMgr);
 
       System.setOut(originalOut);
       System.setErr(originalErr);
 
       System.setSecurityManager(null); // TODO disallow this, but allow here, could also
                                        // TODO add a reset button to the sec mgr
+    }
+  }
+
+  private void waitForDanglingThreadsToFinish(PrintStream originalErr, JSecMgr jSecMgr) {
+    if (jSecMgr.anyHasDanglingThreads()) {
+      originalErr.println("had dangling threads, trying interrupt");
+      jSecMgr.interruptDanglingThreads();
+      if (jSecMgr.anyHasDanglingThreads()) {
+        originalErr.println("there are still remaining threads, sleeping");
+        try {
+          Thread.sleep(100);
+        } catch (InterruptedException e) {
+          // ignore
+        }
+      }
+    } else {
+      originalErr.println("no remaining threads");
+    }
+  }
+
+  private String createAndRunConsoleRunner(
+      List<String> tests,
+      boolean shouldFail,
+      PrintStream originalOut,
+      ByteArrayOutputStream outContent,
+      PrintStream quoteOriginalOut,
+      JSecMgr jSecMgr) {
+    ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
+        failFast,
+        outputMode,
+        xmlReport,
+        perTestTimer,
+        outdir,
+        defaultConcurrency,
+        parallelThreads,
+        testShard,
+        numTestShards,
+        numRetries,
+        useExperimentalRunner,
+        quoteOriginalOut,
+        System.err, // TODO, if there's an error reported on system err, it doesn't show up in
+                    // the test failures.
+        jSecMgr);
+
+    try {
+      runner.run(tests);
+      if (shouldFail) {
+        fail("Expected RuntimeException");
+      }
+    } catch (StoppedByUserException e) {
+      originalOut.println("runtime e " + e);
+      if (!shouldFail) {
+        throw e;
+      }
+    } catch (RuntimeException e) {
+      originalOut.println("runtime e " + e);
+
+      if (!shouldFail || !(e.getMessage() != null && e.getMessage().contains("ConsoleRunner exited with status"))) {
+        throw e;
+      }
+    }
+    quoteOriginalOut.flush();
+    try {
+      return outContent.toString(Charsets.UTF_8.toString());
+    } catch (UnsupportedEncodingException e) {
+      throw new RuntimeException(e);
     }
   }
 
