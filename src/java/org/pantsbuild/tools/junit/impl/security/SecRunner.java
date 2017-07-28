@@ -69,10 +69,11 @@ public class SecRunner extends Runner {
     public void testRunFinished(Result result) throws Exception {
       for (Map.Entry<Description, TestState> descriptionTestStateEntry : tests.entrySet()) {
         if (descriptionTestStateEntry.getValue() == TestState.danglingThreads) {
-          if (secMgr.hadSecIssue(descriptionTestStateEntry.getKey().getClassName())) {
+          Description description = descriptionTestStateEntry.getKey();
+          if (secMgr.hadSecIssue(description.getClassName(), description.getMethodName())) {
             log("found sec issue in dangling thread test.");
-            runNotifier.fireTestFailure(new Failure(descriptionTestStateEntry.getKey(),
-                secMgr.contextFor(descriptionTestStateEntry.getKey().getClassName()).getFailures().iterator().next()));
+            runNotifier.fireTestFailure(new Failure(description,
+                secMgr.contextFor(description.getClassName()).getFailures().iterator().next()));
           }
         }
 
@@ -89,7 +90,6 @@ public class SecRunner extends Runner {
 
     @Override
     public void testStarted(Description description) throws Exception {
-      super.testStarted(description);
       log("test-started: "+description);
       secMgr.startTest(new TestSecurityContext.TestCaseSecurityContext(description.getClassName(),
                                                      description.getMethodName()));
@@ -118,7 +118,7 @@ public class SecRunner extends Runner {
           log("Listener here: already had failed");
           // pass -- we're already failing
           // note, might be worth checking why it failed and printing something
-        } else if (secMgr.hadSecIssue(description.getClassName())) {
+        } else if (secMgr.hadSecIssue(description.getClassName(), description.getMethodName())) {
           Throwable cause = secMgr.securityIssue();
           log("Listener here: had sec issue, " + cause);
           log("\n     settings: "+ secMgr.contextFor(description.getClassName()));
@@ -130,7 +130,7 @@ public class SecRunner extends Runner {
           runNotifier.fireTestFailure(new Failure(description, cause));
           // if secmgr thinks it should have failed, then fail it.
         }
-        if (secMgr.hasDanglingThreads(description.getClassName())) {
+        if (secMgr.hasDanglingThreads(description.getClassName(), description.getMethodName())) {
           log("has dangling threads! " + description);
           if (secMgr.disallowDanglingThread()) {
             runNotifier.fireTestFailure(new Failure(

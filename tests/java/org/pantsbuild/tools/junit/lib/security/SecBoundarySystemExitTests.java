@@ -48,6 +48,7 @@ public class SecBoundarySystemExitTests {
     Thread thread = new Thread(new Runnable() {
       @Override
       public void run() {
+        System.out.println("joined thread exiting");
         System.exit(0);
       }
     });

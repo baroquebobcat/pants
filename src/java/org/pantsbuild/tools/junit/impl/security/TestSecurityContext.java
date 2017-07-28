@@ -1,8 +1,11 @@
 package org.pantsbuild.tools.junit.impl.security;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -20,12 +23,17 @@ public interface TestSecurityContext {
 
   String getClassName();
 
+  boolean hasActiveThreads();
 
   class ContextKey {
 
     public ContextKey(String className, String methodName) {
       this.className = className;
       this.methodName = methodName;
+    }
+
+    public ContextKey(String className) {
+      this(className, null);
     }
 
     static String createThreadGroupName(String className, String methodName) {
@@ -37,12 +45,13 @@ public interface TestSecurityContext {
       assert split.length == 4;
       assert Objects.equals(split[1], "m");
       assert Objects.equals(split[3], "Threads");
-      String methodName = split.length >= 3 ? split[2] : null;
+      // if the method name is missing it is serialized as the string null
+      String methodName = split.length >= 3 && !split[2].equals("null") ? split[2] : null;
       return new ContextKey(split[0], methodName);
     }
 
-    String className;
-    String methodName;
+    private final String className;
+    private final String methodName;
 
     @Override
     public boolean equals(Object o) {
@@ -72,6 +81,22 @@ public interface TestSecurityContext {
     public String getThreadGroupName() {
       return createThreadGroupName(className, methodName);
     }
+
+    public String getMethodName() {
+      return methodName;
+    }
+
+    public boolean isSuiteKey() {
+      return getMethodName() == null;
+    }
+
+    @Override
+    public String toString() {
+      return "ContextKey{" +
+          "className='" + className + '\'' +
+          ", methodName='" + methodName + '\'' +
+          '}';
+    }
   }
 
   class TestCaseSecurityContext implements TestSecurityContext {
@@ -81,9 +106,12 @@ public interface TestSecurityContext {
     private Exception failureException;
 
     public TestCaseSecurityContext(String className, String methodName) {
-      this.contextKey = new ContextKey(className, methodName);
-      this.threadGroup = new ThreadGroup(contextKey.getThreadGroupName());
+      this(new ContextKey(className, methodName));
+    }
 
+    public TestCaseSecurityContext(ContextKey contextKey) {
+      this.contextKey = contextKey;
+      this.threadGroup = new ThreadGroup(contextKey.getThreadGroupName());
     }
 
     public ThreadGroup getThreadGroup() {
@@ -93,6 +121,11 @@ public interface TestSecurityContext {
     @Override
     public String getClassName() {
       return contextKey.getClassName();
+    }
+
+    @Override
+    public boolean hasActiveThreads() {
+      return getThreadGroup().activeCount() > 0;
     }
 
     @Override
@@ -124,9 +157,12 @@ public interface TestSecurityContext {
   class SuiteTestSecurityContext implements TestSecurityContext {
 
     private final ContextKey contextKey;
+    private final ThreadGroup threadGroup;
+    private Map<String, TestSecurityContext> children = new HashMap<>();
 
     public SuiteTestSecurityContext(String className) {
       contextKey = new ContextKey(className, null);
+      threadGroup = new ThreadGroup(contextKey.getThreadGroupName());
     }
 
     @Override
@@ -136,17 +172,47 @@ public interface TestSecurityContext {
 
     @Override
     public List<Exception> getFailures() {
-      return null;
+      List<Exception> failures = new ArrayList<>();
+      for (TestSecurityContext testSecurityContext : children.values()) {
+        failures.addAll(testSecurityContext.getFailures());
+      }
+      return failures;
     }
 
     @Override
     public ThreadGroup getThreadGroup() {
-      return null;
+      return threadGroup;
     }
 
     @Override
     public String getClassName() {
       return contextKey.getClassName();
+    }
+
+    @Override
+    public boolean hasActiveThreads() {
+      return getThreadGroup().activeCount() > 0;
+    }
+
+    public synchronized void addChild(TestCaseSecurityContext testSecurityContext) {
+      children.put(testSecurityContext.contextKey.getMethodName(), testSecurityContext);
+    }
+
+    public boolean hasNoChildren() {
+      return children.isEmpty();
+    }
+
+    public TestSecurityContext getChild(String methodName) {
+      return children.get(methodName);
+    }
+
+    @Override
+    public String toString() {
+      return "SuiteTestSecurityContext{" +
+          "contextKey=" + contextKey +
+          ", threadGroup=" + threadGroup +
+          ", children=" + children +
+          '}';
     }
   }
 }

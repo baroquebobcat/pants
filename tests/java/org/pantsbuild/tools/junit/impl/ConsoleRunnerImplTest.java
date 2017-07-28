@@ -302,7 +302,7 @@ public class ConsoleRunnerImplTest {
   // -- allow thread started in before all
   // -- ??? thread started in static context
   // - annotation for ignoring threads started in class.
-
+  // test thread spawns another thread that does disallowed thing.
   // test other class spawns thread st the test class isn't in class context of secmgr
   @Test
   public void treatStaticSystemExitAsFailure() {

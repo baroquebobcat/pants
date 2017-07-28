@@ -1,8 +1,15 @@
 # Copyright 2015 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-junit_tests(
+target(
   name='junit',
+  dependencies=[
+    ':impl',
+    'tests/java/org/pantsbuild/tools/junit/impl/security'
+  ],
+)
+
+junit_tests(
   dependencies=[
     '3rdparty:guava',
     '3rdparty:junit',

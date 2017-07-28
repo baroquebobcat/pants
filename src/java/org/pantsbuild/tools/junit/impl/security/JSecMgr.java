@@ -92,7 +92,9 @@ public class JSecMgr extends SecurityManager {
 
 
   static class SecurityLogic {
-    private final Map<String, TestSecurityContext> classNameToSettings = new HashMap<>();
+    // TODO handling of this is pretty messy and will have problems across threads if notifiers are
+    // not synchronized.
+    private final Map<String, SuiteTestSecurityContext> classNameToSuiteContext = new HashMap<>();
     private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
     final JSecMgrConfig config;
 
@@ -109,22 +111,42 @@ public class JSecMgr extends SecurityManager {
     }
 
     public void startTest(TestCaseSecurityContext testSecurityContext) {
-      //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
+      SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(testSecurityContext.getClassName());
+      if (suiteContext != null) {
+        suiteContext.addChild(testSecurityContext);
+      } else {
+        SuiteTestSecurityContext value = new SuiteTestSecurityContext(testSecurityContext.getClassName());
+        classNameToSuiteContext.put(testSecurityContext.getClassName(), value);
+        value.addChild(testSecurityContext);
+      }
+      getAndSetLocal(testSecurityContext);
+    }
+
+    public void getAndSetLocal(TestSecurityContext testSecurityContext) {
       TestSecurityContext andSet = settingsRef.get();
       settingsRef.set(testSecurityContext);
-      classNameToSettings.put(testSecurityContext.getClassName(), testSecurityContext);
       if (andSet != null) {
-        // complain
+        // complain maybe.
       }
     }
 
-    public TestSecurityContext getContextForClassName(String className) {
-      return classNameToSettings.get(className);
+    public void startTest(ContextKey contextKey) {
+      startTest(new TestCaseSecurityContext(contextKey));
     }
 
-    public boolean anyHasDanglingThreads() {
-      for (Map.Entry<String, TestSecurityContext> k : classNameToSettings.entrySet()) {
-        if (k.getValue().getThreadGroup().activeCount() > 0) {
+    public void startSuite(ContextKey contextKey) {
+      SuiteTestSecurityContext securityContext = new SuiteTestSecurityContext(contextKey.getClassName());
+      getAndSetLocal(securityContext);
+      classNameToSuiteContext.put(contextKey.getClassName(), securityContext);
+    }
+
+    public TestSecurityContext getContextForClassName(String className) {
+      return classNameToSuiteContext.get(className);
+    }
+
+    public boolean anyHasRunningThreads() {
+      for (Map.Entry<String, SuiteTestSecurityContext> k : classNameToSuiteContext.entrySet()) {
+        if (k.getValue().hasActiveThreads()) {
           return true;
         }
       }
@@ -132,11 +154,37 @@ public class JSecMgr extends SecurityManager {
     }
 
     public Collection<String> availableClasses() {
-      return classNameToSettings.keySet();
+      return classNameToSuiteContext.keySet();
     }
 
     public boolean disallowDanglingThread() {
       return config.disallowDanglingThread();
+    }
+
+    public void endTest() {
+      removeCurrentThreadSecurityContext();
+    }
+
+    public TestSecurityContext getContext(ContextKey contextKey) {
+      if (contextKey.getClassName() != null) {
+        SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(contextKey.getClassName());
+        if (suiteContext == null) {
+          return null;
+        }
+        if (contextKey.isSuiteKey()) {
+          return suiteContext;
+        }
+        if (suiteContext.hasNoChildren()) {
+          return suiteContext;
+        }
+        return suiteContext.getChild(contextKey.getMethodName());
+      }
+      return null;
+    }
+
+    public TestSecurityContext lookupContextByThreadGroup() {
+      ContextKey contextKey = ContextKey.parseFromThreadGroupName(Thread.currentThread().getThreadGroup().getName());
+      return getContext(contextKey);
     }
   }
 
@@ -154,21 +202,24 @@ public class JSecMgr extends SecurityManager {
   }
 
   void startTestClass(SuiteTestSecurityContext suiteTestSecurityContext) {
-    //classNameToSettings.
-
+    // TODO Next
   }
 
-  boolean hasDanglingThreads(String className) {
-    TestSecurityContext testSecurityContext = getContextForClassName(className);
+  boolean hasDanglingThreads(String className, String methodName) {
+    TestSecurityContext testSecurityContext = securityLogic.getContext(new ContextKey(className, methodName));
     if (testSecurityContext == null) {
       return false;
     }
     return testSecurityContext.getThreadGroup().activeCount() > 0;
   }
 
-  boolean hadSecIssue(String className) {
-    TestSecurityContext testSecurityContext = getContextForClassName(className);
-    return hadSecIssue(testSecurityContext);
+  boolean hadSecIssue(String name, String methodName) {
+    TestSecurityContext testSecurityContext = securityLogic.getContext(new ContextKey(name, methodName));
+    if (testSecurityContext == null) {
+      return false;
+    }
+
+    return testSecurityContext.getFailures().size() > 0;
   }
 
   private TestSecurityContext lookupContext() {
@@ -182,27 +233,19 @@ public class JSecMgr extends SecurityManager {
       return contextFromRef;
     }
 
-    String threadGroupName = Thread.currentThread().getThreadGroup().getName();
-    ContextKey contextKey = ContextKey.parseFromThreadGroupName(threadGroupName);
-    String classNameFromThreadGroup = contextKey.getClassName();
-//    assert classNameFromThreadGroup.equals(classNameFromThreadGroupOld);
-//    if (!classNameFromThreadGroup.equals(classNameFromThreadGroupOld)) {
-//      throw new RuntimeException("wut old "+classNameFromThreadGroupOld + " new "+classNameFromThreadGroup);
-//    }
-
-
-    TestSecurityContext contextFromThreadGroup = getContextForClassName(classNameFromThreadGroup);
+    TestSecurityContext contextFromThreadGroup = securityLogic.lookupContextByThreadGroup();
     if (contextFromThreadGroup != null) {
-      log("lookupContext", "found via thread group: " + threadGroupName);
+      log("lookupContext", "found via thread group");
       return contextFromThreadGroup;
     } else {
-      log("lookupContext", " not found thread group: " + threadGroupName);
+      log("lookupContext", " not found thread group: " + Thread.currentThread().getThreadGroup().getName());
       log("lookupContext", " available " + securityLogic.availableClasses());
     }
 
-    for (Class<?> c : getClassContext()) {
+    Class[] classContext = getClassContext();
+    for (Class<?> c : classContext) {
       // this will no longer match.
-      TestSecurityContext testSecurityContext = getContextForClassName(c.getName());
+      TestSecurityContext testSecurityContext = securityLogic.getContextForClassName(c.getName());
       if (testSecurityContext != null) {
         log("lookupContext", "found matching stack element!");
         return testSecurityContext;
@@ -215,24 +258,12 @@ public class JSecMgr extends SecurityManager {
     logger.fine("---" + methodName + ":" + msg);
   }
 
-  private boolean hadSecIssue(TestSecurityContext testSecurityContext) {
-    if (testSecurityContext == null) {
-      return false;
-    }
-
-    return testSecurityContext.getFailures().size() > 0;
-  }
-
-  private TestSecurityContext getContextForClassName(String className) {
+  TestSecurityContext contextFor(String className) {
     return securityLogic.getContextForClassName(className);
   }
 
-  TestSecurityContext contextFor(String className) {
-    return getContextForClassName(className);
-  }
-
   public boolean anyHasDanglingThreads() {
-    return securityLogic.anyHasDanglingThreads();
+    return securityLogic.anyHasRunningThreads();
   }
 
   void endTest() {
