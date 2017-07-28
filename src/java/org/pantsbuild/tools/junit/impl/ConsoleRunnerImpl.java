@@ -586,11 +586,20 @@ public class ConsoleRunnerImpl {
 
   private Runner runnerFor(Request request) {
     Runner reqRunner = request.getRunner();
-    SecRunner withSecRunner = new SecRunner(reqRunner, secMgr);
+
+    Runner withSecRunner = maybeWrapWithSecurity(reqRunner);
     if (failFast) {
       return new FailFastRunner(withSecRunner);
     } else {
       return withSecRunner;
+    }
+  }
+
+  private Runner maybeWrapWithSecurity(Runner reqRunner) {
+    if (secMgr == null) {
+      return reqRunner;
+    }else {
+      return new SecRunner(reqRunner, secMgr);
     }
   }
 
@@ -848,6 +857,16 @@ public class ConsoleRunnerImpl {
       @Option(name="-use-experimental-runner",
           usage="Use the experimental runner that has support for parallel methods")
       private boolean useExperimentalRunner = false;
+
+      @Option(name = "-use-security-manager",
+          usage = "Use the security to enforce restrictions on tests.")
+      private boolean useSecurityManager = false;
+
+
+      @Option(name = "-security-thread-handling",
+          usage = "Choose how thread lifetimes are controlled by the security manager.")
+      private JSecMgrConfig.ThreadHandling threadHandling;
+
     }
 
     Options options = new Options();
@@ -866,10 +885,19 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgrConfig secMgrConfig = new JSecMgrConfig(
-        JSecMgrConfig.SystemExitHandling.allow,
-        JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads);
-    JSecMgr secMgr = new JSecMgr(secMgrConfig, out);
+    JSecMgr secMgr;
+    if (options.useSecurityManager) {
+      JSecMgrConfig.ThreadHandling threadHandling = JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads;
+      if (options.threadHandling != null) {
+        threadHandling = options.threadHandling;
+      }
+      JSecMgrConfig secMgrConfig = new JSecMgrConfig(
+          JSecMgrConfig.SystemExitHandling.disallow,
+          threadHandling);
+      secMgr = new JSecMgr(secMgrConfig, out);
+    } else {
+      secMgr = null;
+    }
     System.setSecurityManager(secMgr);
 
 
