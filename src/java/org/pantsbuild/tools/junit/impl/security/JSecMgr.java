@@ -3,8 +3,8 @@ package org.pantsbuild.tools.junit.impl.security;
 import java.io.FileDescriptor;
 import java.io.PrintStream;
 import java.security.Permission;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
@@ -17,10 +17,8 @@ public class JSecMgr extends SecurityManager {
 
   // these are going to be overridden because multiple tests own a classname, so the lookup needs
   // to be by class then method
-  private final Map<String, TestSecurityContext> classNameToSettings = new HashMap<>();
-  private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
+  private final SecurityLogic securityLogic;
 
-  final JSecMgrConfig config;
   private final PrintStream out;
 
   // lifecycle
@@ -84,8 +82,62 @@ public class JSecMgr extends SecurityManager {
 
   public JSecMgr(JSecMgrConfig config, PrintStream out) {
     super();
-    this.config = config;
+    this.securityLogic = new SecurityLogic(config);
     this.out = out;
+  }
+
+  public boolean disallowDanglingThread() {
+    return securityLogic.disallowDanglingThread();
+  }
+
+
+  static class SecurityLogic {
+    private final Map<String, TestSecurityContext> classNameToSettings = new HashMap<>();
+    private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
+    final JSecMgrConfig config;
+
+    SecurityLogic(JSecMgrConfig config) {
+      this.config = config;
+    }
+
+    public TestSecurityContext getCurrentSecurityContext() {
+      return settingsRef.get();
+    }
+
+    public void removeCurrentThreadSecurityContext() {
+      settingsRef.remove();
+    }
+
+    public void startTest(TestCaseSecurityContext testSecurityContext) {
+      //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
+      TestSecurityContext andSet = settingsRef.get();
+      settingsRef.set(testSecurityContext);
+      classNameToSettings.put(testSecurityContext.getClassName(), testSecurityContext);
+      if (andSet != null) {
+        // complain
+      }
+    }
+
+    public TestSecurityContext getContextForClassName(String className) {
+      return classNameToSettings.get(className);
+    }
+
+    public boolean anyHasDanglingThreads() {
+      for (Map.Entry<String, TestSecurityContext> k : classNameToSettings.entrySet()) {
+        if (k.getValue().getThreadGroup().activeCount() > 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    public Collection<String> availableClasses() {
+      return classNameToSettings.keySet();
+    }
+
+    public boolean disallowDanglingThread() {
+      return config.disallowDanglingThread();
+    }
   }
 
   Throwable securityIssue() {
@@ -98,19 +150,14 @@ public class JSecMgr extends SecurityManager {
   }
 
   void startTest(TestCaseSecurityContext testSecurityContext) {
-    //TestSecurityContext andSet = settingsRef.getAndSet(testSecurityContext);
-    TestSecurityContext andSet = settingsRef.get();
-    settingsRef.set(testSecurityContext);
-    classNameToSettings.put(testSecurityContext.getClassName(), testSecurityContext);
-    if (andSet != null) {
-      // complain
-    }
+    securityLogic.startTest(testSecurityContext);
   }
 
-  /*void startTestClass(SuiteTestSecurityContext suiteTestSecurityContext) {
+  void startTestClass(SuiteTestSecurityContext suiteTestSecurityContext) {
+    //classNameToSettings.
 
   }
-*/
+
   boolean hasDanglingThreads(String className) {
     TestSecurityContext testSecurityContext = getContextForClassName(className);
     if (testSecurityContext == null) {
@@ -129,7 +176,7 @@ public class JSecMgr extends SecurityManager {
     // check the current thread group
     // else
     // walk the stack to find a matching class.
-    TestSecurityContext contextFromRef = settingsRef.get();
+    TestSecurityContext contextFromRef = securityLogic.getCurrentSecurityContext();
     if (contextFromRef != null) {
       log("lookupContext", "found via ref!");
       return contextFromRef;
@@ -150,7 +197,7 @@ public class JSecMgr extends SecurityManager {
       return contextFromThreadGroup;
     } else {
       log("lookupContext", " not found thread group: " + threadGroupName);
-      log("lookupContext", " available " + classNameToSettings.keySet());
+      log("lookupContext", " available " + securityLogic.availableClasses());
     }
 
     for (Class<?> c : getClassContext()) {
@@ -164,7 +211,7 @@ public class JSecMgr extends SecurityManager {
     return null;
   }
 
-  private void log(String methodName, String msg) {
+  private static void log(String methodName, String msg) {
     logger.fine("---" + methodName + ":" + msg);
   }
 
@@ -177,7 +224,7 @@ public class JSecMgr extends SecurityManager {
   }
 
   private TestSecurityContext getContextForClassName(String className) {
-    return classNameToSettings.get(className);
+    return securityLogic.getContextForClassName(className);
   }
 
   TestSecurityContext contextFor(String className) {
@@ -185,16 +232,11 @@ public class JSecMgr extends SecurityManager {
   }
 
   public boolean anyHasDanglingThreads() {
-    for (Map.Entry<String, TestSecurityContext> k : classNameToSettings.entrySet()) {
-      if (k.getValue().getThreadGroup().activeCount() > 0) {
-        return true;
-      }
-    }
-    return false;
+    return securityLogic.anyHasDanglingThreads();
   }
 
   void endTest() {
-    settingsRef.remove();
+    securityLogic.removeCurrentThreadSecurityContext();
   }
 
   public void withSettings(TestCaseSecurityContext testSecurityContext, Runnable runnable) {
@@ -216,7 +258,7 @@ public class JSecMgr extends SecurityManager {
 
   @Override
   public Object getSecurityContext() {
-    return settingsRef.get();
+    return securityLogic.getCurrentSecurityContext();
   }
 
   @Override
@@ -255,7 +297,7 @@ public class JSecMgr extends SecurityManager {
     //  throw new RuntimeException("wut");
     //}
     //Thread.currentThread().getThreadGroup()
-    if (config.disallowSystemExit()) {
+    if (disallowSystemExit()) {
       // TODO improve message so that it points out the line the call happened on more explicitly.
       //
       SecurityException ex;
@@ -279,6 +321,10 @@ public class JSecMgr extends SecurityManager {
       super.checkExit(status);
       throw ex;
     }
+  }
+
+  public boolean disallowSystemExit() {
+    return securityLogic.config.disallowSystemExit();
   }
 
   @Override

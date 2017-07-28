@@ -61,9 +61,8 @@ public class SecRunner extends Runner {
     @Override
     public void testRunStarted(Description description) throws Exception {
       // might want to have a nested settings here in the manager
-      super.testRunStarted(description);
-      //secMgr.startTestClass(new
-      //    TestSecurityContext.SuiteTestSecurityContext(description.getClassName()));
+      secMgr.startTestClass(new
+          TestSecurityContext.SuiteTestSecurityContext(description.getClassName()));
     }
 
     @Override
@@ -133,7 +132,7 @@ public class SecRunner extends Runner {
         }
         if (secMgr.hasDanglingThreads(description.getClassName())) {
           log("has dangling threads! " + description);
-          if (secMgr.config.disallowDanglingThread()) {
+          if (secMgr.disallowDanglingThread()) {
             runNotifier.fireTestFailure(new Failure(
                 description,
                 new SecurityException("Threads from "+description+" are still running.")));
