@@ -42,9 +42,6 @@ public class WrapStatementWithSecurityManager extends Statement {
   }
 
   public static Statement wrappedStatement(Description description, Statement statement) {
-    if (true){
-      return statement;
-    }
     JSecMgr jSecMgr = (JSecMgr) System.getSecurityManager();
     if (jSecMgr == null) {
       return statement;

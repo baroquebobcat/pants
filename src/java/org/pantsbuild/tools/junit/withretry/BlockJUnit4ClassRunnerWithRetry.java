@@ -36,11 +36,12 @@ public class BlockJUnit4ClassRunnerWithRetry extends BlockJUnit4ClassRunner {
   }
 
   protected Statement classBlock(final RunNotifier notifier) {
+    Statement statement = super.classBlock(notifier);
     // TODO using the SecManager needs to be made optional. Also, this class should not be
     // responsible for injecting it.
-    Statement statement = super.classBlock(notifier);
-    Description description = getDescription();
-    return WrapStatementWithSecurityManager.wrappedStatement(description, statement);
+    //Description description = getDescription();
+    //return WrapStatementWithSecurityManager.wrappedStatement(description, statement);
+    return statement;
   }
 
   @Override

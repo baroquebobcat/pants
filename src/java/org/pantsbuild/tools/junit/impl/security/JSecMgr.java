@@ -3,9 +3,6 @@ package org.pantsbuild.tools.junit.impl.security;
 import java.io.FileDescriptor;
 import java.io.PrintStream;
 import java.security.Permission;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
@@ -17,7 +14,7 @@ public class JSecMgr extends SecurityManager {
 
   // these are going to be overridden because multiple tests own a classname, so the lookup needs
   // to be by class then method
-  private final SecurityLogic securityLogic;
+  private final JunitSecurityLogic securityLogic;
 
   private final PrintStream out;
 
@@ -82,7 +79,7 @@ public class JSecMgr extends SecurityManager {
 
   public JSecMgr(JSecMgrConfig config, PrintStream out) {
     super();
-    this.securityLogic = new SecurityLogic(config);
+    this.securityLogic = new JunitSecurityLogic(config);
     this.out = out;
   }
 
@@ -92,126 +89,6 @@ public class JSecMgr extends SecurityManager {
 
   public boolean perClassThreadHandling() {
     return securityLogic.config.getThreadHandling() == JSecMgrConfig.ThreadHandling.disallowDanglingTestSuiteThreads;
-  }
-
-  static class SecurityLogic {
-    // TODO handling of this is pretty messy and will have problems across threads if notifiers are
-    // not synchronized.
-    private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
-    private final Map<String, SuiteTestSecurityContext> classNameToSuiteContext = new HashMap<>();
-    final JSecMgrConfig config;
-    SecurityLogic(JSecMgrConfig config) {
-      this.config = config;
-    }
-
-    public TestSecurityContext getCurrentSecurityContext() {
-      return settingsRef.get();
-    }
-
-    public void removeCurrentThreadSecurityContext() {
-      settingsRef.remove();
-    }
-
-    public void startTest(TestCaseSecurityContext testSecurityContext) {
-      SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(testSecurityContext.getClassName());
-      if (suiteContext != null) {
-        suiteContext.addChild(testSecurityContext);
-      } else {
-        SuiteTestSecurityContext value = new SuiteTestSecurityContext(testSecurityContext.getClassName());
-        classNameToSuiteContext.put(testSecurityContext.getClassName(), value);
-        value.addChild(testSecurityContext);
-      }
-      getAndSetLocal(testSecurityContext);
-    }
-
-    public void startTest(ContextKey contextKey) {
-      SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(contextKey.getClassName());
-      if (suiteContext == null) {
-        suiteContext= new SuiteTestSecurityContext(contextKey.getClassName());
-        classNameToSuiteContext.put(contextKey.getClassName(), suiteContext);
-      }
-
-      TestCaseSecurityContext testSecurityContext = new TestCaseSecurityContext(contextKey, suiteContext);
-      suiteContext.addChild(testSecurityContext);
-      getAndSetLocal(testSecurityContext);
-    }
-
-    public void getAndSetLocal(TestSecurityContext testSecurityContext) {
-      TestSecurityContext andSet = settingsRef.get();
-      settingsRef.set(testSecurityContext);
-      if (andSet != null) {
-        // complain maybe.
-      }
-    }
-
-    public void startSuite(ContextKey contextKey) {
-      SuiteTestSecurityContext securityContext = new SuiteTestSecurityContext(contextKey.getClassName());
-      getAndSetLocal(securityContext);
-      classNameToSuiteContext.put(contextKey.getClassName(), securityContext);
-    }
-
-    public TestSecurityContext getContextForClassName(String className) {
-      return classNameToSuiteContext.get(className);
-    }
-
-    public boolean anyHasRunningThreads() {
-      for (Map.Entry<String, SuiteTestSecurityContext> k : classNameToSuiteContext.entrySet()) {
-        if (k.getValue().hasActiveThreads()) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    public Collection<String> availableClasses() {
-      return classNameToSuiteContext.keySet();
-    }
-
-    public boolean disallowDanglingThread() {
-      return config.disallowDanglingThread();
-    }
-
-    public void endTest() {
-      removeCurrentThreadSecurityContext();
-    }
-
-    public TestSecurityContext getContext(ContextKey contextKey) {
-      if (contextKey.getClassName() != null) {
-        SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(contextKey.getClassName());
-        if (suiteContext == null) {
-          return null;
-        }
-        if (contextKey.isSuiteKey()) {
-          return suiteContext;
-        }
-        if (suiteContext.hasNoChildren()) {
-          return suiteContext;
-        }
-        return suiteContext.getChild(contextKey.getMethodName());
-      }
-      return null;
-    }
-
-    public TestSecurityContext lookupContextByThreadGroup() {
-      ContextKey contextKey = ContextKey.parseFromThreadGroupName(Thread.currentThread().getThreadGroup().getName());
-      return getContext(contextKey);
-    }
-
-    public boolean disallowsThreadsFor(TestSecurityContext context) {
-      switch (config.getThreadHandling()) {
-        case allowAll:
-          return false;
-        case disallow:
-          return true;
-        case disallowDanglingTestCaseThreads:
-          return true;
-        case disallowDanglingTestSuiteThreads:
-          return context instanceof SuiteTestSecurityContext;
-        default:
-          return false;
-      }
-
-    }
   }
 
   void startTest(TestCaseSecurityContext testSecurityContext) {
@@ -338,13 +215,6 @@ public class JSecMgr extends SecurityManager {
 
   @Override
   public void checkExit(int status) {
-    //out.println("tried a system exit!");
-    //System.out.println("tried a system exit! System.out");
-    //System.err.println("tried a system exit! on err");
-    //if (true) {
-    //  throw new RuntimeException("wut");
-    //}
-    //Thread.currentThread().getThreadGroup()
     if (disallowSystemExit()) {
       // TODO improve message so that it points out the line the call happened on more explicitly.
       //
