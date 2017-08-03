@@ -8,78 +8,17 @@ import java.util.logging.Logger;
 
 import static org.pantsbuild.tools.junit.impl.security.TestSecurityContext.*;
 
-public class JSecMgr extends SecurityManager {
+public class JunitSecViolationReportingManager extends SecurityManager {
 
   private static Logger logger = Logger.getLogger("pants-junit-sec-mgr");
 
-  // these are going to be overridden because multiple tests own a classname, so the lookup needs
-  // to be by class then method
-  private final JunitSecurityLogic securityLogic;
+  private final JunitSecurityContextLookupAndErrorCollection securityLogic;
 
   private final PrintStream out;
 
-  // lifecycle
-  // execution contexts:
-  //   StaticContext
-  //      when the class containing tests is loaded
-  //   SuiteContext
-  //      while the beforeclass et al are being run -- analogous to classBlock in the block runner
-  //   TestContext
-  //      while the test case is running
-  //
-  // thread contexts:
-
-  //    Test class context / might also be suite context
-  //       holds threads started in the class/suite context
-  //    Test case context
-  //       holds threads started in the method/case context
-  //    Q should threads started in a static context be considered to exist in the class context?
-  //
-
-  // exception handling:
-  //   allow tests to swallow Security exceptions
-  //   force test failure on Sec exceptions
-  // scopes:
-  //   test suite
-  //   all tests
-  //   test case
-  //   static eval
-  //
-  // file:
-  //   disallow all
-  //   allow only specified files / dirs
-  //   allow all
-  //
-  // network:
-  //   disallow all
-  //   allow only localhost and loop back
-  //   allow only localhost connections, but allow dns resolve to see if address is pointed at
-  //              localhost
-  //   allow all
-  //
-
-  // disallow network access
-
-
-  // scheme.
-  //   sets a thread local with the testSecurityContext
-  //   if a thread is created, injects the testSecurityContext into its thread local table when it
-  //   is constructed.
-  //   not sure if thats possible.
-  //   could use this for ThreadGroups
-
-  // java.io.FilePermission
-  // , java.net.SocketPermission,
-  // java.net.NetPermission,
-  // java.security.SecurityPermission,
-  // java.lang.RuntimePermission,
-  // java.util.PropertyPermission, java.awt.AWTPermission, java.lang.reflect.ReflectPermission,
-  // and java.io.SerializablePermission.
-
-
-  public JSecMgr(JSecMgrConfig config, PrintStream out) {
+  public JunitSecViolationReportingManager(JSecMgrConfig config, PrintStream out) {
     super();
-    this.securityLogic = new JunitSecurityLogic(config);
+    this.securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
     this.out = out;
   }
 

@@ -6,25 +6,25 @@ import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 
 public class WrapStatementWithSecurityManager extends Statement {
-  private final JSecMgr jSecMgr;
+  private final JunitSecViolationReportingManager junitSecViolationReportingManager;
   private final TestSecurityContext.ContextKey contextKey;
   private final Statement inner;
 
-  public WrapStatementWithSecurityManager(JSecMgr jSecMgr, TestSecurityContext.ContextKey contextKey, Statement inner) {
-    this.jSecMgr = jSecMgr;
+  public WrapStatementWithSecurityManager(JunitSecViolationReportingManager junitSecViolationReportingManager, TestSecurityContext.ContextKey contextKey, Statement inner) {
+    this.junitSecViolationReportingManager = junitSecViolationReportingManager;
     this.contextKey = contextKey;
     this.inner = inner;
   }
 
   @Override
   public void evaluate() throws Throwable {
-    JSecMgr jSecMgr = (JSecMgr) System.getSecurityManager();
-    if (jSecMgr == null) {
+    JunitSecViolationReportingManager junitSecViolationReportingManager = (JunitSecViolationReportingManager) System.getSecurityManager();
+    if (junitSecViolationReportingManager == null) {
       inner.evaluate();
       return;
     }
 
-    jSecMgr.withSettings(
+    junitSecViolationReportingManager.withSettings(
         contextKey,
         new Callable<Void>() {
       @Override
@@ -42,13 +42,13 @@ public class WrapStatementWithSecurityManager extends Statement {
   }
 
   public static Statement wrappedStatement(Description description, Statement statement) {
-    JSecMgr jSecMgr = (JSecMgr) System.getSecurityManager();
-    if (jSecMgr == null) {
+    JunitSecViolationReportingManager junitSecViolationReportingManager = (JunitSecViolationReportingManager) System.getSecurityManager();
+    if (junitSecViolationReportingManager == null) {
       return statement;
     }
 
     return new WrapStatementWithSecurityManager(
-        jSecMgr,
+        junitSecViolationReportingManager,
         new TestSecurityContext.ContextKey(description.getClassName()),
         statement);
   }

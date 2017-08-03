@@ -16,9 +16,9 @@ import org.junit.runner.notification.RunNotifier;
 public class SecRunner extends Runner {
   private static Logger logger = Logger.getLogger("pants-junit");
   private final Runner wrappedRunner;
-  private final JSecMgr secMgr;
+  private final JunitSecViolationReportingManager secMgr;
 
-  public SecRunner(Runner wrappedRunner, JSecMgr secMgr) {
+  public SecRunner(Runner wrappedRunner, JunitSecViolationReportingManager secMgr) {
     this.wrappedRunner = wrappedRunner;
     this.secMgr = secMgr;
   }
@@ -52,9 +52,9 @@ public class SecRunner extends Runner {
     private final RunNotifier runNotifier;
     // todo can this be run on different threads? If so, I need some rethinking.
     private final Map<Description, TestState> tests =  new HashMap<>();
-    private final JSecMgr secMgr;
+    private final JunitSecViolationReportingManager secMgr;
 
-    SecListener(RunNotifier runNotifier, JSecMgr secMgr) {
+    SecListener(RunNotifier runNotifier, JunitSecViolationReportingManager secMgr) {
       this.runNotifier = runNotifier;
       this.secMgr = secMgr;
     }

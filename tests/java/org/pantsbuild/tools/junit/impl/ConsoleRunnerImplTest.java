@@ -13,14 +13,13 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.Result;
 import org.junit.runner.notification.RunListener;
 import org.junit.runner.notification.StoppedByUserException;
-import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager;
 import org.pantsbuild.tools.junit.impl.security.JSecMgrConfig;
 import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
@@ -117,13 +116,13 @@ public class ConsoleRunnerImplTest {
 
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     PrintStream quoteOriginalOut = new PrintStream(outContent, true);
-    JSecMgr jSecMgr = new JSecMgr(config, quoteOriginalOut);
+    JunitSecViolationReportingManager junitSecViolationReportingManager = new JunitSecViolationReportingManager(config, quoteOriginalOut);
     try {
-      System.setSecurityManager(jSecMgr);
-      return createAndRunConsoleRunner(tests, shouldFail, originalOut, outContent, quoteOriginalOut, jSecMgr);
+      System.setSecurityManager(junitSecViolationReportingManager);
+      return createAndRunConsoleRunner(tests, shouldFail, originalOut, outContent, quoteOriginalOut, junitSecViolationReportingManager);
     } finally {
       // there might be a better way to do this.
-      waitForDanglingThreadsToFinish(originalErr, jSecMgr);
+      waitForDanglingThreadsToFinish(originalErr, junitSecViolationReportingManager);
 
       System.setOut(originalOut);
       System.setErr(originalErr);
@@ -133,11 +132,11 @@ public class ConsoleRunnerImplTest {
     }
   }
 
-  private void waitForDanglingThreadsToFinish(PrintStream originalErr, JSecMgr jSecMgr) {
-    if (jSecMgr.anyHasDanglingThreads()) {
+  private void waitForDanglingThreadsToFinish(PrintStream originalErr, JunitSecViolationReportingManager junitSecViolationReportingManager) {
+    if (junitSecViolationReportingManager.anyHasDanglingThreads()) {
       originalErr.println("had dangling threads, trying interrupt");
-      jSecMgr.interruptDanglingThreads();
-      if (jSecMgr.anyHasDanglingThreads()) {
+      junitSecViolationReportingManager.interruptDanglingThreads();
+      if (junitSecViolationReportingManager.anyHasDanglingThreads()) {
         originalErr.println("there are still remaining threads, sleeping");
         try {
           Thread.sleep(100);
@@ -156,7 +155,7 @@ public class ConsoleRunnerImplTest {
       PrintStream originalOut,
       ByteArrayOutputStream outContent,
       PrintStream quoteOriginalOut,
-      JSecMgr jSecMgr) {
+      JunitSecViolationReportingManager junitSecViolationReportingManager) {
     ConsoleRunnerImpl runner = new ConsoleRunnerImpl(
         failFast,
         outputMode,
@@ -172,7 +171,7 @@ public class ConsoleRunnerImplTest {
         quoteOriginalOut,
         System.err, // TODO, if there's an error reported on system err, it doesn't show up in
                     // the test failures.
-        jSecMgr);
+        junitSecViolationReportingManager);
 
     try {
       runner.run(tests);
@@ -317,7 +316,7 @@ public class ConsoleRunnerImplTest {
     // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
     // ... 50 lines ...
     // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
-    // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
+    // at org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager.checkExit(JunitSecViolationReportingManager.java:257)
     // I think it should either end with 0 tests run 1 error, or
     // 2 run, 2 error, with a better error than ExceptionInInitializerError
     Class<?> testClass = SecStaticSysExitTestCase.class;
@@ -340,7 +339,7 @@ public class ConsoleRunnerImplTest {
     // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
     // ... 50 lines ...
     // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
-    // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
+    // at org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager.checkExit(JunitSecViolationReportingManager.java:257)
     // I think it should either end with 0 tests run 1 error, or
     // 2 run, 2 error, with a better error than ExceptionInInitializerError
     Class<?> testClass = BeforeClassSysExitTestCase.class;

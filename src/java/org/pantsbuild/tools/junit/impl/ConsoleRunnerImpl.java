@@ -51,7 +51,7 @@ import org.pantsbuild.args4j.InvalidCmdLineArgumentException;
 import org.pantsbuild.junit.annotations.TestParallel;
 import org.pantsbuild.junit.annotations.TestSerial;
 import org.pantsbuild.tools.junit.impl.experimental.ConcurrentComputer;
-import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager;
 import org.pantsbuild.tools.junit.impl.security.JSecMgrConfig;
 import org.pantsbuild.tools.junit.impl.security.SecRunner;
 
@@ -65,7 +65,7 @@ public class ConsoleRunnerImpl {
   private static boolean callSystemExitOnFinish = true;
   /** Intended to be used in unit testing this class */
   private static RunListener testListener = null;
-  private JSecMgr secMgr;
+  private JunitSecViolationReportingManager secMgr;
   private static Logger logger = Logger.getLogger("pants-junit");
 
   /**
@@ -406,7 +406,7 @@ public class ConsoleRunnerImpl {
       boolean useExperimentalRunner,
       PrintStream out,
       PrintStream err,
-      JSecMgr secMgr) {
+      JunitSecViolationReportingManager secMgr) {
     this.secMgr = secMgr;
 
     Preconditions.checkNotNull(outputMode);
@@ -885,7 +885,7 @@ public class ConsoleRunnerImpl {
     PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
     PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
 
-    JSecMgr secMgr;
+    JunitSecViolationReportingManager secMgr;
     if (options.useSecurityManager) {
       JSecMgrConfig.ThreadHandling threadHandling = JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads;
       if (options.threadHandling != null) {
@@ -894,7 +894,7 @@ public class ConsoleRunnerImpl {
       JSecMgrConfig secMgrConfig = new JSecMgrConfig(
           JSecMgrConfig.SystemExitHandling.disallow,
           threadHandling);
-      secMgr = new JSecMgr(secMgrConfig, out);
+      secMgr = new JunitSecViolationReportingManager(secMgrConfig, out);
     } else {
       secMgr = null;
     }

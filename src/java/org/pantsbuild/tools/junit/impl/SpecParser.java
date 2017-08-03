@@ -17,7 +17,7 @@ import java.util.logging.Logger;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 
-import org.pantsbuild.tools.junit.impl.security.JSecMgr;
+import org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager;
 
 import static org.pantsbuild.tools.junit.impl.security.TestSecurityContext.*;
 
@@ -143,7 +143,7 @@ class SpecParser {
     if (securityManager == null) {
       return callable.call();
     }
-    final JSecMgr jsecMgr = (JSecMgr) securityManager;
+    final JunitSecViolationReportingManager jsecViolationReportingManager = (JunitSecViolationReportingManager) securityManager;
     try {
       // doPrivileged here allows us to wrap all
       return AccessController.doPrivileged(
@@ -151,7 +151,7 @@ class SpecParser {
             @Override
             public T run() throws Exception {
               try {
-                return jsecMgr.withSettings(
+                return jsecViolationReportingManager.withSettings(
                     new ContextKey(className),
                     callable);
               } catch (Exception e) {

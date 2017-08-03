@@ -41,7 +41,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.disallowDanglingTestSuiteThreads);
-    JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
     assertThat(
         securityLogic.disallowsThreadsFor(new SuiteTestSecurityContext("foo")),
         is(true));
@@ -52,7 +52,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
-    JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
     assertThat(
         securityLogic.disallowsThreadsFor(new SuiteTestSecurityContext("foo")),
         is(false));
@@ -63,7 +63,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
-    JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
 
     ContextKey testKey = new ContextKey("org.foo.Foo", "test");
 
@@ -80,7 +80,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
-    JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
 
     ContextKey suiteKey = new ContextKey("org.foo.Foo");
     securityLogic.startSuite(suiteKey);
@@ -115,7 +115,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
-    final JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    final JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
 
     ContextKey suiteKey = new ContextKey("org.foo.Foo");
     securityLogic.startSuite(suiteKey);
@@ -156,7 +156,7 @@ public class SecurityLogicTest {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
-    JunitSecurityLogic securityLogic = new JunitSecurityLogic(config);
+    JunitSecurityContextLookupAndErrorCollection securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
 
     ContextKey suiteKey = new ContextKey("org.foo.Foo");
     securityLogic.startSuite(suiteKey);
