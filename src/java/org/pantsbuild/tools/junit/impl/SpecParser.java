@@ -5,10 +5,6 @@ package org.pantsbuild.tools.junit.impl;
 
 import com.google.common.base.Optional;
 import java.lang.reflect.Method;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.concurrent.Callable;
@@ -18,8 +14,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 
 import org.pantsbuild.tools.junit.impl.security.JunitSecViolationReportingManager;
-
-import static org.pantsbuild.tools.junit.impl.security.TestSecurityContext.*;
 
 /**
  * Takes strings passed to the command line representing packages or individual methods
@@ -101,21 +95,10 @@ class SpecParser {
   private Class<?> loadOrThrow(final String className, String specString) {
     try {
 
-      // VV isn't right. This can't exec static client code.
-      // ping sec mgr -- this execs static client code, so we want to be sure its covered
-      return maybeWithSecurityManagerContext(className, new Callable<Class<?>>() {
+      return JunitSecViolationReportingManager.maybeWithSecurityManagerContext(className, new Callable<Class<?>>() {
         public Class<?> call() throws ClassNotFoundException {
-          log("loading class for ... :" + className);
-
-          Class<?> loadedClass = getClass().getClassLoader().loadClass(className);
-
-          log("getClass().getClassLoader() " + getClass().getClassLoader());
-          log("maybe try inspecting loaded class");
-          log("name via class call: " + loadedClass.getCanonicalName());
-          log("methods: " + Arrays.toString(loadedClass.getDeclaredMethods()));
-          log("loading class successful for ... :" + className);
-
-          return loadedClass;
+          logger.fine("loading class for ... :" + className);
+          return getClass().getClassLoader().loadClass(className);
         }
       });
 
@@ -132,44 +115,9 @@ class SpecParser {
       // The class may fail with some variant of RTE in its static initializers, trap these
       // and dump the bad spec in question to help narrow down issue.
       throw new SpecException(specString,
-          String.format("Error initializing %s. %s blah %s",className, e, e.getCause()), e);
+          String.format("Error initializing %s. %s cause: %s",className, e, e.getCause()), e);
     }
 
-  }
-
-  private <T> T maybeWithSecurityManagerContext(final String className, final Callable<T> callable) throws Exception {
-    SecurityManager securityManager = System.getSecurityManager();
-    // skip if there is no security manager
-    if (securityManager == null) {
-      return callable.call();
-    }
-    final JunitSecViolationReportingManager jsecViolationReportingManager = (JunitSecViolationReportingManager) securityManager;
-    try {
-      // doPrivileged here allows us to wrap all
-      return AccessController.doPrivileged(
-          new PrivilegedExceptionAction<T>() {
-            @Override
-            public T run() throws Exception {
-              try {
-                return jsecViolationReportingManager.withSettings(
-                    new ContextKey(className),
-                    callable);
-              } catch (Exception e) {
-                throw e;
-              } catch (Throwable t) {
-                throw new RuntimeException(t);
-              }
-            }
-          },
-          AccessController.getContext()
-      );
-    } catch (PrivilegedActionException e) {
-      throw e.getException();
-    }
-  }
-
-  private static void log(String msg) {
-    logger.fine(msg);
   }
 
   /**

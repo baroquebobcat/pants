@@ -2,7 +2,10 @@ package org.pantsbuild.tools.junit.impl.security;
 
 import java.io.FileDescriptor;
 import java.io.PrintStream;
+import java.security.AccessController;
 import java.security.Permission;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 
@@ -20,6 +23,37 @@ public class JunitSecViolationReportingManager extends SecurityManager {
     super();
     this.securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
     this.out = out;
+  }
+
+  public static <T> T maybeWithSecurityManagerContext(final String className, final Callable<T> callable) throws Exception {
+    SecurityManager securityManager = System.getSecurityManager();
+    // skip if there is no security manager
+    if (securityManager == null) {
+      return callable.call();
+    }
+    final JunitSecViolationReportingManager jsecViolationReportingManager = (JunitSecViolationReportingManager) securityManager;
+    try {
+      // doPrivileged here allows us to wrap all
+      return AccessController.doPrivileged(
+          new PrivilegedExceptionAction<T>() {
+            @Override
+            public T run() throws Exception {
+              try {
+                return jsecViolationReportingManager.withSettings(
+                    new ContextKey(className),
+                    callable);
+              } catch (Exception e) {
+                throw e;
+              } catch (Throwable t) {
+                throw new RuntimeException(t);
+              }
+            }
+          },
+          AccessController.getContext()
+      );
+    } catch (PrivilegedActionException e) {
+      throw e.getException();
+    }
   }
 
   public boolean disallowsThreadsFor(TestSecurityContext context) {

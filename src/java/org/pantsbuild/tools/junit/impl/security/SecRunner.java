@@ -68,7 +68,6 @@ public class SecRunner extends Runner {
     // testRunFinished is for all of the tests.
     @Override
     public void testRunFinished(Result result) throws Exception {
-      System.out.println("Z");
       for (Description description : tests.keySet()) {
         if (tests.get(description) == TestState.failed) {
           // NB if it's already failed, just show the initial
