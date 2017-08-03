@@ -69,6 +69,8 @@ public class ConsoleRunnerTest extends ConsoleRunnerTestBase {
       fail("expected test failure");
     } catch (RuntimeException e) {
       assertThat(e.getMessage(), containsString("ConsoleRunner exited with status 1"));
+    } finally {
+      System.setSecurityManager(null);
     }
     assertEquals("test31 test32",
         TestRegistry.getCalledTests());

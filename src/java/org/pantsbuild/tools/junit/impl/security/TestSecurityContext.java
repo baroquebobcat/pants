@@ -1,7 +1,6 @@
 package org.pantsbuild.tools.junit.impl.security;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +23,10 @@ public interface TestSecurityContext {
   String getClassName();
 
   boolean hasActiveThreads();
+
+  boolean hadFailures();
+
+  Exception firstFailure();
 
   class ContextKey {
 
@@ -97,6 +100,14 @@ public interface TestSecurityContext {
           ", methodName='" + methodName + '\'' +
           '}';
     }
+
+    public ContextKey getSuiteKey() {
+      if (isSuiteKey()) {
+        return this;
+      } else {
+        return new ContextKey(className);
+      }
+    }
   }
 
   class TestCaseSecurityContext implements TestSecurityContext {
@@ -105,13 +116,13 @@ public interface TestSecurityContext {
     private final ThreadGroup threadGroup;
     private Exception failureException;
 
-    public TestCaseSecurityContext(String className, String methodName) {
-      this(new ContextKey(className, methodName));
+    public TestCaseSecurityContext(String className, String methodName, TestSecurityContext parent) {
+      this(new ContextKey(className, methodName), parent);
     }
 
-    public TestCaseSecurityContext(ContextKey contextKey) {
+    public TestCaseSecurityContext(ContextKey contextKey, TestSecurityContext parent) {
       this.contextKey = contextKey;
-      this.threadGroup = new ThreadGroup(contextKey.getThreadGroupName());
+      this.threadGroup = new ThreadGroup(parent.getThreadGroup(), contextKey.getThreadGroupName());
     }
 
     public ThreadGroup getThreadGroup() {
@@ -126,6 +137,16 @@ public interface TestSecurityContext {
     @Override
     public boolean hasActiveThreads() {
       return getThreadGroup().activeCount() > 0;
+    }
+
+    @Override
+    public boolean hadFailures() {
+      return !getFailures().isEmpty();
+    }
+
+    @Override
+    public Exception firstFailure() {
+      return getFailures().get(0);
     }
 
     @Override
@@ -159,6 +180,7 @@ public interface TestSecurityContext {
     private final ContextKey contextKey;
     private final ThreadGroup threadGroup;
     private Map<String, TestSecurityContext> children = new HashMap<>();
+    private final List<Exception> failures = new ArrayList<>();
 
     public SuiteTestSecurityContext(String className) {
       contextKey = new ContextKey(className, null);
@@ -167,15 +189,13 @@ public interface TestSecurityContext {
 
     @Override
     public void addFailure(Exception ex) {
-
+      failures.add(ex);
     }
 
     @Override
     public List<Exception> getFailures() {
       List<Exception> failures = new ArrayList<>();
-      for (TestSecurityContext testSecurityContext : children.values()) {
-        failures.addAll(testSecurityContext.getFailures());
-      }
+      failures.addAll(this.failures);
       return failures;
     }
 
@@ -191,7 +211,26 @@ public interface TestSecurityContext {
 
     @Override
     public boolean hasActiveThreads() {
-      return getThreadGroup().activeCount() > 0;
+      boolean activeCountNotEmpty = getThreadGroup().activeCount() > 0;
+      if (activeCountNotEmpty) {
+        return activeCountNotEmpty;
+      }
+      for (TestSecurityContext testSecurityContext : children.values()) {
+        if (testSecurityContext.hasActiveThreads()) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    @Override
+    public boolean hadFailures() {
+      return !getFailures().isEmpty();
+    }
+
+    @Override
+    public Exception firstFailure() {
+      return getFailures().get(0);
     }
 
     public synchronized void addChild(TestCaseSecurityContext testSecurityContext) {

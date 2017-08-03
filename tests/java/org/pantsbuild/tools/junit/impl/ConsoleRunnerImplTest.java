@@ -26,6 +26,7 @@ import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
 import org.pantsbuild.tools.junit.lib.OutputModeTest;
+import org.pantsbuild.tools.junit.lib.security.BeforeClassSysExitTestCase;
 import org.pantsbuild.tools.junit.lib.security.SecBoundarySystemExitTests;
 import org.pantsbuild.tools.junit.lib.security.SecDanglingThreadFromTestCase;
 import org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase;
@@ -34,6 +35,7 @@ import org.pantsbuild.tools.junit.lib.security.ThreadStartedInBeforeClassAndNotJ
 import org.pantsbuild.tools.junit.lib.security.ThreadStartedInBeforeTest;
 
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.fail;
@@ -217,10 +219,10 @@ public class ConsoleRunnerImplTest {
         new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.allowAll),
         testClass);
     String testClassName = testClass.getCanonicalName();
-    assertThat(output, containsString("directSystemExit(" + testClassName + ")"));
-    assertThat(output, containsString("catchesSystemExit(" + testClassName + ")"));
-    assertThat(output, containsString("exitInJoinedThread(" + testClassName + ")"));
-    assertThat(output, containsString("exitInNotJoinedThread(" + testClassName + ")"));
+    assertThat(output, containsString(") directSystemExit(" + testClassName + ")"));
+    assertThat(output, containsString(") catchesSystemExit(" + testClassName + ")"));
+    assertThat(output, containsString(") exitInJoinedThread(" + testClassName + ")"));
+    assertThat(output, containsString(") exitInNotJoinedThread(" + testClassName + ")"));
 
     assertThat(output, containsString("There were 4 failures:"));
     assertThat(output, containsString("Tests run: 5,  Failures: 4"));
@@ -263,7 +265,6 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 2,  Failures: 1"));
   }
 
-  @Ignore
   @Test
   public void testThreadStartedInBeforeClassAndJoinedAfterClassWithPerSuiteThreadLife() {
     // Expect that of the two tests, only the test that fails due to an assertion failure will fail.
@@ -279,7 +280,6 @@ public class ConsoleRunnerImplTest {
     assertThat(output, containsString("Tests run: 2,  Failures: 1"));
   }
 
-  @Ignore
   @Test
   public void testThreadStartedInBeforeClassAndNotJoinedAfterClassWithPerSuiteThreadLife() {
     // Expect that of the two tests, only the test that fails due to an assertion failure will fail.
@@ -290,10 +290,15 @@ public class ConsoleRunnerImplTest {
         testClass);
     // TODO This shouldn't use a java.lang.SecurityException for the failure
     // Also could say where the thread was started.
-    assertThat(output, containsString("failingxx(" + testClass.getCanonicalName() + ")"));
-    //assertThat(output, containsString("at foo"));
+
+    assertThat(ThreadStartedInBeforeClassAndNotJoinedAfterTest.thread.getState(), is(Thread.State.WAITING));
+    assertThat(output, containsString("failing(" + testClass.getCanonicalName() + ")"));
+
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, containsString("Tests run: 2,  Failures: 2"));
+
+    // stop thread waiting on the latch.
+    ThreadStartedInBeforeClassAndNotJoinedAfterTest.latch.countDown();
   }
 
   // TODO
@@ -325,6 +330,29 @@ public class ConsoleRunnerImplTest {
     // should be 0 tests run 1 failure/error
     assertThat(output, containsString("There were 2 failures:"));
     assertThat(output, containsString("Tests run: 2,  Failures: 2"));
+  }
+
+  @Test
+  public void treatBeforeClassSystemExitAsFailure() {
+    // The question here is whether it should fail before running the tests. Right now it runs them,
+    // but the resulting error is
+    // java.lang.ExceptionInInitializerError
+    // at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+    // ... 50 lines ...
+    // Caused by: java.lang.SecurityException: System.exit calls are not allowed. context: TestSecurityContext{org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase#passingTest2, threadGroup=java.lang.ThreadGroup[name=org.pantsbuild.tools.junit.lib.security.SecStaticSysExitTestCase-m-passingTest2-Threads,maxpri=10], threadGroupActiveCt=0, failureException=null}
+    // at org.pantsbuild.tools.junit.impl.security.JSecMgr.checkExit(JSecMgr.java:257)
+    // I think it should either end with 0 tests run 1 error, or
+    // 2 run, 2 error, with a better error than ExceptionInInitializerError
+    Class<?> testClass = BeforeClassSysExitTestCase.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestCaseThreads),
+        testClass);
+
+    assertThat(output, containsString("1) " + testClass.getCanonicalName() + ""));
+    assertThat(output, containsString("System.exit calls are not allowed"));
+
+    assertThat(output, containsString("There was 1 failure:"));
+    assertThat(output, containsString("Tests run: 0,  Failures: 1"));
   }
 
   @Test

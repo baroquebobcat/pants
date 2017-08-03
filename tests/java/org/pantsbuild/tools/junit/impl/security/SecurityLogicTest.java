@@ -37,19 +37,42 @@ public class SecurityLogicTest {
   }
 
   @Test
-  public void complainIfNoSuite() {
+  public void disallowsDanglingThreadsForSuiteIfSuiteDisallowed() {
+    JSecMgrConfig config = new JSecMgrConfig(
+        SystemExitHandling.disallow,
+        ThreadHandling.disallowDanglingTestSuiteThreads);
+    JSecMgr.SecurityLogic securityLogic = new JSecMgr.SecurityLogic(config);
+    assertThat(
+        securityLogic.disallowsThreadsFor(new SuiteTestSecurityContext("foo")),
+        is(true));
+  }
+
+  @Test
+  public void allowAllIncludesSuites() {
+    JSecMgrConfig config = new JSecMgrConfig(
+        SystemExitHandling.disallow,
+        ThreadHandling.allowAll);
+    JSecMgr.SecurityLogic securityLogic = new JSecMgr.SecurityLogic(config);
+    assertThat(
+        securityLogic.disallowsThreadsFor(new SuiteTestSecurityContext("foo")),
+        is(false));
+  }
+
+  @Test
+  public void createSuiteIfMissing() {
     JSecMgrConfig config = new JSecMgrConfig(
         SystemExitHandling.disallow,
         ThreadHandling.allowAll);
     JSecMgr.SecurityLogic securityLogic = new JSecMgr.SecurityLogic(config);
 
     ContextKey testKey = new ContextKey("org.foo.Foo", "test");
-    try {
-      securityLogic.startTest(testKey);
-      fail("Expected starting a test without a suite first to fail.");
-    } catch (Exception e) {
-      // pass
-    }
+
+    securityLogic.startTest(testKey);
+    ContextKey suiteKey = new ContextKey("org.foo.Foo");
+    assertThat(securityLogic.getContext(suiteKey), notNullValue());
+    assertThat(
+        securityLogic.getContext(suiteKey).getThreadGroup(),
+        is(securityLogic.getContext(testKey).getThreadGroup().getParent()));
   }
 
   @Test

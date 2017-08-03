@@ -5,15 +5,14 @@ package org.pantsbuild.tools.junit.withretry;
 
 import java.io.PrintStream;
 import java.lang.reflect.Method;
-import java.util.concurrent.Callable;
 
+import org.junit.runner.Description;
 import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.junit.runners.model.Statement;
-import org.pantsbuild.tools.junit.impl.security.JSecMgr;
-import org.pantsbuild.tools.junit.impl.security.TestSecurityContext;
+import org.pantsbuild.tools.junit.impl.security.WrapStatementWithSecurityManager;
 
 /**
  * A subclass of BlockJUnit4ClassRunner that supports retrying failing tests, up to the
@@ -37,38 +36,16 @@ public class BlockJUnit4ClassRunnerWithRetry extends BlockJUnit4ClassRunner {
   }
 
   protected Statement classBlock(final RunNotifier notifier) {
-    return super.classBlock(notifier);
+    // TODO using the SecManager needs to be made optional. Also, this class should not be
+    // responsible for injecting it.
+    Statement statement = super.classBlock(notifier);
+    Description description = getDescription();
+    return WrapStatementWithSecurityManager.wrappedStatement(description, statement);
   }
 
   @Override
   protected Statement methodBlock(FrameworkMethod method) {
     return new InvokeWithRetry(method);
-  }
-
-  private class WithSecManagerStuff extends Statement {
-    private final Statement inner;
-
-    WithSecManagerStuff(Statement inner) {
-      this.inner = inner;
-    }
-
-    @Override
-    public void evaluate() throws Throwable {
-      ((JSecMgr)System.getSecurityManager()).withSettings(
-          new TestSecurityContext.TestCaseSecurityContext("something", "somemethod"), new Callable<Void>() {
-        @Override
-        public Void call() {
-          try {
-            inner.evaluate();
-          } catch (Throwable throwable) {
-            throwable.printStackTrace();
-            // AAAAAAAaaargh
-            throw new RuntimeException(throwable);
-          }
-          return null;
-        }
-      });
-    }
   }
 
   private class InvokeWithRetry extends Statement {

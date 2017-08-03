@@ -1,7 +1,9 @@
 package org.pantsbuild.tools.junit.impl.security;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 
 import org.junit.runner.Description;
@@ -48,10 +50,9 @@ public class SecRunner extends Runner {
 
   public static class SecListener extends RunListener {
     private final RunNotifier runNotifier;
-    //private final Result result = new Result();
+    // todo can this be run on different threads? If so, I need some rethinking.
     private final Map<Description, TestState> tests =  new HashMap<>();
     private final JSecMgr secMgr;
-    // think I need the RunNofifier here after all to trigger a failure.
 
     SecListener(RunNotifier runNotifier, JSecMgr secMgr) {
       this.runNotifier = runNotifier;
@@ -61,38 +62,65 @@ public class SecRunner extends Runner {
     @Override
     public void testRunStarted(Description description) throws Exception {
       // might want to have a nested settings here in the manager
-      secMgr.startTestClass(new
-          TestSecurityContext.SuiteTestSecurityContext(description.getClassName()));
     }
 
+
+    // testRunFinished is for all of the tests.
     @Override
     public void testRunFinished(Result result) throws Exception {
-      for (Map.Entry<Description, TestState> descriptionTestStateEntry : tests.entrySet()) {
-        if (descriptionTestStateEntry.getValue() == TestState.danglingThreads) {
-          Description description = descriptionTestStateEntry.getKey();
-          if (secMgr.hadSecIssue(description.getClassName(), description.getMethodName())) {
-            log("found sec issue in dangling thread test.");
-            runNotifier.fireTestFailure(new Failure(description,
-                secMgr.contextFor(description.getClassName()).getFailures().iterator().next()));
-          }
+      System.out.println("Z");
+      for (Description description : tests.keySet()) {
+        if (tests.get(description) == TestState.failed) {
+          // NB if it's already failed, just show the initial
+          // failure.
+          continue;
         }
 
+        TestSecurityContext context = contextFor(description);
+        if (description.isTest()) {
+          if (context.hadFailures()) {
+            handleSecurityFailure(description, context);
+          }
+          handleDanglingThreads(description, context);
+        } else if (description.isSuite()) {
+          if (context.hadFailures()) {
+            handleSecurityFailure(description, context);
+          }
+          handleDanglingThreads(description, context);
+        } else {
+          throw new RuntimeException("WUT " + description);
+        }
       }
-      if (secMgr.anyHasDanglingThreads()) {
-        log("has dangling threads! ");
-        //Map.Entry<Description, TestState> next = tests.entrySet().iterator().next();
-        //runNotifier.fireTestFailure(new Failure(next.getKey(), new Exception("has dangling threads")));
-        //runNotifier.fireTestFailure(new Failure(new Description()));
-      } else {
-        log("All good then");
+
+      Set<Class<?>> classNames = new HashSet<>();
+      for (Description description : tests.keySet()) {
+        classNames.add(description.getTestClass());
       }
+      for (Class<?> className : classNames) {
+        TestSecurityContext context = secMgr.contextFor(className.getCanonicalName());
+        if (context != null) {
+          if (context.hadFailures()) {
+            handleSecurityFailure(Description.createSuiteDescription(className), context);
+          }
+          if (secMgr.perClassThreadHandling()) {
+            handleDanglingThreads(Description.createSuiteDescription(className), context);
+          }
+        }
+      }
+
     }
 
     @Override
     public void testStarted(Description description) throws Exception {
       log("test-started: "+description);
-      secMgr.startTest(new TestSecurityContext.TestCaseSecurityContext(description.getClassName(),
-                                                     description.getMethodName()));
+      if (description.isTest()) {
+        secMgr.startTest(new TestSecurityContext.TestCaseSecurityContext(description.getClassName(),
+            description.getMethodName(), secMgr.contextFor(description.getClassName())));
+      } else if (description.isSuite()){
+        secMgr.startSuite(description.getClassName());
+      } else {
+        log("what is "+description);
+      }
       tests.put(description, TestState.started);
     }
 
@@ -110,43 +138,60 @@ public class SecRunner extends Runner {
 
     @Override
     public void testFinished(Description description) throws Exception {
-      // check for dangling resources here
-      log("finished test " + description);
-      try {
-        TestState testState = tests.get(description);
-        if (testState == TestState.failed) {
-          log("Listener here: already had failed");
-          // pass -- we're already failing
-          // note, might be worth checking why it failed and printing something
-        } else if (secMgr.hadSecIssue(description.getClassName(), description.getMethodName())) {
-          Throwable cause = secMgr.securityIssue();
-          log("Listener here: had sec issue, " + cause);
-          log("\n     settings: "+ secMgr.contextFor(description.getClassName()));
-          if (cause == null) {
-            cause = new RuntimeException("think it should have failed anyway. " +
-                "Think probably shouldnt get here");
-          }
-
-          runNotifier.fireTestFailure(new Failure(description, cause));
-          // if secmgr thinks it should have failed, then fail it.
-        }
-        if (secMgr.hasDanglingThreads(description.getClassName(), description.getMethodName())) {
-          log("has dangling threads! " + description);
-          if (secMgr.disallowDanglingThread()) {
-            runNotifier.fireTestFailure(new Failure(
-                description,
-                new SecurityException("Threads from "+description+" are still running.")));
-          } else {
-            tests.put(description, TestState.danglingThreads);
-          }
-        } else {
-          log("Listener here: no issues");
-        }
-      } finally {
-        secMgr.endTest();
+      TestState testState = tests.get(description);
+      if (testState == TestState.failed) {
+        // NB if it's already failed, just show the initial
+        // failure.
+        return;
       }
+
+      TestSecurityContext context = contextFor(description);
+      if (description.isTest()) {
+        try {
+          if (context.hadFailures()) {
+            handleSecurityFailure(description, context);
+          }
+          handleDanglingThreads(description, context);
+        } finally {
+          secMgr.endTest();
+        }
+      } else if (description.isSuite()) {
+        if (context.hadFailures()) {
+          handleSecurityFailure(description, context);
+        }
+        handleDanglingThreads(description, context);
+      }
+
       //description.
       // if not failed and there was a sec issue and we're failing on them, raise an exception
+    }
+
+    public void handleSecurityFailure(Description description, TestSecurityContext context) {
+      if (tests.get(description) == TestState.failed) {
+        return;
+      }
+      Throwable cause = context.firstFailure();
+      fireFailure(description, cause);
+      tests.put(description, TestState.failed);
+    }
+
+    public void handleDanglingThreads(Description description, TestSecurityContext context) {
+      if (context.hasActiveThreads()) {
+        if(secMgr.disallowsThreadsFor(context)) {
+          fireFailure(description, new SecurityException("Threads from " + description + " are still running."));
+          tests.put(description, TestState.failed);
+        } else {
+          tests.put(description, TestState.danglingThreads);
+        }
+      }
+    }
+
+    private void fireFailure(Description description, Throwable cause) {
+      runNotifier.fireTestFailure(new Failure(description, cause));
+    }
+
+    public TestSecurityContext contextFor(Description description) {
+      return secMgr.contextFor(description.getClassName(), description.getMethodName());
     }
 
     private void log(String x) {

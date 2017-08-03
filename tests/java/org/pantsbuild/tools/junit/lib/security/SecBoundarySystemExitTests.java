@@ -1,5 +1,7 @@
 package org.pantsbuild.tools.junit.lib.security;
 
+import java.util.concurrent.CountDownLatch;
+
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -7,6 +9,8 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class SecBoundarySystemExitTests {
+
+  static CountDownLatch latch = new CountDownLatch(1);
 
   @BeforeClass
   public static void beforeAll() {
@@ -16,6 +20,12 @@ public class SecBoundarySystemExitTests {
   @AfterClass
   public static void afterAll() {
     System.out.println("=after class.");
+    latch.countDown();
+    try {
+      Thread.sleep(1);
+    } catch (InterruptedException e) {
+      // ignore
+    }
   }
 
   @Before
@@ -62,9 +72,10 @@ public class SecBoundarySystemExitTests {
       @Override
       public void run() {
         try {
-          Thread.sleep(4); // wait for test to finish.
+          latch.await(); // wait until after AfterClass is done
+          System.out.println("dangling thread done waiting");
         } catch (InterruptedException e) {
-          e.printStackTrace();
+          // ignore
         }
         System.out.println("dangling thread now exiting");
         System.exit(0);

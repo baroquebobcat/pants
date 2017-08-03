@@ -1,5 +1,7 @@
 package org.pantsbuild.tools.junit.lib.security;
 
+import java.util.concurrent.CountDownLatch;
+
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -8,7 +10,10 @@ import static org.junit.Assert.fail;
 
 public class ThreadStartedInBeforeClassAndNotJoinedAfterTest {
 
-  private static Thread thread;
+  public static Thread thread;
+
+  // this is used by the tests to stop the dangling thread after the test is over.
+  public static CountDownLatch latch = new CountDownLatch(1);
 
   @BeforeClass
   public static void startThread() {
@@ -17,12 +22,13 @@ public class ThreadStartedInBeforeClassAndNotJoinedAfterTest {
       @Override
       public void run() {
         try {
-          Thread.sleep(4);
+          latch.await();
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
       }
     });
+    thread.start();
   }
 
   @Test

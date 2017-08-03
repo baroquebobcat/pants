@@ -19,6 +19,10 @@ public class JSecMgrConfig {
     return threadHandling != ThreadHandling.allowAll;
   }
 
+  public ThreadHandling getThreadHandling() {
+    return threadHandling;
+  }
+
   public enum SystemExitHandling {
     // allow tests to call system exit. Not sure why you'd want that, but ...
     allow,
