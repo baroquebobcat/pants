@@ -14,6 +14,7 @@ class JunitSecurityContextLookupAndErrorCollection {
   //      when the class containing tests is loaded
   //   SuiteContext
   //      while the beforeclass et al are being run -- analogous to classBlock in the block runner
+  //      But, classes may not always be 1:1 with suites
   //   TestContext
   //      while the test case is running
   //
@@ -25,7 +26,7 @@ class JunitSecurityContextLookupAndErrorCollection {
   //       holds threads started in the method/case context
   //    Q should threads started in a static context be considered to exist in the class context?
   //
-
+  // Flag possibilities
   // exception handling:
   //   allow tests to swallow Security exceptions
   //   force test failure on Sec exceptions
@@ -47,10 +48,6 @@ class JunitSecurityContextLookupAndErrorCollection {
   //              localhost
   //   allow all
   //
-
-  // disallow network access
-
-
   // scheme.
   //   sets a thread local with the testSecurityContext
   //   if a thread is created, injects the testSecurityContext into its thread local table when it
@@ -58,6 +55,7 @@ class JunitSecurityContextLookupAndErrorCollection {
   //   not sure if thats possible.
   //   could use this for ThreadGroups
 
+  // Permissions to write checks for.
   // java.io.FilePermission
   // , java.net.SocketPermission,
   // java.net.NetPermission,
@@ -66,8 +64,8 @@ class JunitSecurityContextLookupAndErrorCollection {
   // java.util.PropertyPermission, java.awt.AWTPermission, java.lang.reflect.ReflectPermission,
   // and java.io.SerializablePermission.
 
-  // TODO handling of this is pretty messy and will have problems across threads if notifiers are
-  // not synchronized.
+  // TODO handling of writing SuiteContexts and failures is pretty messy and will have problems
+  // across threads if notifiers are not synchronized.
   private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
   private final Map<String, TestSecurityContext.SuiteTestSecurityContext> classNameToSuiteContext = new HashMap<>();
   private static final Logger logger = Logger.getLogger("junit-security-context");
@@ -119,6 +117,10 @@ class JunitSecurityContextLookupAndErrorCollection {
     }
   }
 
+  private Collection<String> availableClasses() {
+    return classNameToSuiteContext.keySet();
+  }
+
   void endTest() {
     removeCurrentThreadSecurityContext();
   }
@@ -138,10 +140,6 @@ class JunitSecurityContextLookupAndErrorCollection {
       }
     }
     return false;
-  }
-
-  Collection<String> availableClasses() {
-    return classNameToSuiteContext.keySet();
   }
 
   TestSecurityContext getContext(TestSecurityContext.ContextKey contextKey) {
