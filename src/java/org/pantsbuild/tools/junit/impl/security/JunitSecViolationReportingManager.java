@@ -73,31 +73,14 @@ public class JunitSecViolationReportingManager extends SecurityManager {
   }
 
   private TestSecurityContext lookupContext() {
-    TestSecurityContext contextFromRef = contextLookupAndErrorCollection.getCurrentSecurityContext();
-    if (contextFromRef != null) {
-      log("lookupContext", "found via ref!");
-      return contextFromRef;
-    }
+    TestSecurityContext cheaperContext = contextLookupAndErrorCollection.lookupWithoutExaminingClassContext();
 
-    TestSecurityContext contextFromThreadGroup = contextLookupAndErrorCollection.lookupContextByThreadGroup();
-    if (contextFromThreadGroup != null) {
-      log("lookupContext", "found via thread group");
-      return contextFromThreadGroup;
-    } else {
-      log("lookupContext", " not found thread group: " + Thread.currentThread().getThreadGroup().getName());
-      log("lookupContext", " available " + contextLookupAndErrorCollection.availableClasses());
+    if (cheaperContext != null) {
+      return cheaperContext;
     }
 
     Class[] classContext = getClassContext();
-    for (Class<?> c : classContext) {
-      // this will no longer match.
-      TestSecurityContext testSecurityContext = contextLookupAndErrorCollection.getContextForClassName(c.getName());
-      if (testSecurityContext != null) {
-        log("lookupContext", "found matching stack element!");
-        return testSecurityContext;
-      }
-    }
-    return null;
+    return contextLookupAndErrorCollection.lookupContextFromClassContext(classContext);
   }
 
   private static void log(String methodName, String msg) {
@@ -120,12 +103,6 @@ public class JunitSecViolationReportingManager extends SecurityManager {
     contextLookupAndErrorCollection.removeCurrentThreadSecurityContext();
   }
 
-  public void withSettings(ContextKey contextKey, Runnable runnable) {
-    startTest(contextKey);
-    runnable.run();
-    endTest();
-  }
-
   public <V> V withSettings(ContextKey context, Callable<V> callable) throws Throwable {
     if (context.isSuiteKey()) {
       startSuite(context.getClassName());
@@ -136,9 +113,8 @@ public class JunitSecViolationReportingManager extends SecurityManager {
       return callable.call();
     } catch (RuntimeException e) {
       throw e.getCause();
-    }finally {
-      endTest();
-
+    } finally {
+      contextLookupAndErrorCollection.removeCurrentThreadSecurityContext();
     }
   }
 

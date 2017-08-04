@@ -160,9 +160,6 @@ public class SecRunner extends Runner {
         }
         handleDanglingThreads(description, context);
       }
-
-      //description.
-      // if not failed and there was a sec issue and we're failing on them, raise an exception
     }
 
     public void handleSecurityFailure(Description description, TestSecurityContext context) {

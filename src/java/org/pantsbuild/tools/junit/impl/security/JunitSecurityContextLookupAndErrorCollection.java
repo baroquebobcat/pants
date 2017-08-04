@@ -3,6 +3,7 @@ package org.pantsbuild.tools.junit.impl.security;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Logger;
 
 // TODO this is a terrible name.
 class JunitSecurityContextLookupAndErrorCollection {
@@ -69,7 +70,9 @@ class JunitSecurityContextLookupAndErrorCollection {
   // not synchronized.
   private final ThreadLocal<TestSecurityContext> settingsRef = new ThreadLocal<>();
   private final Map<String, TestSecurityContext.SuiteTestSecurityContext> classNameToSuiteContext = new HashMap<>();
+  private static final Logger logger = Logger.getLogger("junit-security-context");
   final JSecMgrConfig config;
+
   JunitSecurityContextLookupAndErrorCollection(JSecMgrConfig config) {
     this.config = config;
   }
@@ -93,7 +96,7 @@ class JunitSecurityContextLookupAndErrorCollection {
   void startTest(TestSecurityContext.ContextKey contextKey) {
     TestSecurityContext.SuiteTestSecurityContext suiteContext = classNameToSuiteContext.get(contextKey.getClassName());
     if (suiteContext == null) {
-      suiteContext= new TestSecurityContext.SuiteTestSecurityContext(contextKey.getClassName());
+      suiteContext = new TestSecurityContext.SuiteTestSecurityContext(contextKey.getClassName());
       classNameToSuiteContext.put(contextKey.getClassName(), suiteContext);
     }
 
@@ -176,5 +179,40 @@ class JunitSecurityContextLookupAndErrorCollection {
       default:
         return false;
     }
+  }
+
+  TestSecurityContext lookupWithoutExaminingClassContext() {
+    TestSecurityContext cheaperContext = null;
+    TestSecurityContext contextFromRef = getCurrentSecurityContext();
+    if (contextFromRef != null) {
+      logger.fine("lookupContext: found via ref!");
+      cheaperContext = contextFromRef;
+    }
+
+    if (cheaperContext == null) {
+      TestSecurityContext contextFromThreadGroup = lookupContextByThreadGroup();
+      if (contextFromThreadGroup != null) {
+        logger.fine("lookupContext: found via thread group");
+        cheaperContext = contextFromThreadGroup;
+      } else {
+        logger.fine("lookupContext: not found thread group: " + Thread.currentThread().getThreadGroup().getName());
+        logger.fine("lookupContext: available " + availableClasses());
+      }
+    }
+    return cheaperContext;
+  }
+
+
+  TestSecurityContext lookupContextFromClassContext(Class[] classContext) {
+    for (Class<?> c : classContext) {
+      // Will only find the classes context and not the test cases, but it's better than not finding
+      // any
+      TestSecurityContext testSecurityContext = getContextForClassName(c.getName());
+      if (testSecurityContext != null) {
+        logger.fine("lookupContext: found matching stack element!");
+        return testSecurityContext;
+      }
+    }
+    return null;
   }
 }
