@@ -21,7 +21,7 @@ java_library(
     'src/java/org/pantsbuild/tools/junit/withretry',
     ':sec-mgr',
   ],
-  sources=globs('*.java', 'impl/*.java', 'impl/experimental/*.java', exclude=['impl/JSecMgr.java']),
+  sources=globs('*.java', 'impl/*.java', 'impl/experimental/*.java'),
   platform='java7',
 )
 

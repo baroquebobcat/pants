@@ -308,7 +308,8 @@ public class ConsoleRunnerImplTest {
         new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestSuiteThreads),
         testClass);
 
-    assertThat(output, containsString("failing(" + testClass.getCanonicalName() + ")"));
+    assertThat(output, containsString(") "+SystemExitsInObjectBody.class.getCanonicalName()));
+    assertThat(output, containsString("System.exit calls are not allowed."));
   }
 
   @Test
