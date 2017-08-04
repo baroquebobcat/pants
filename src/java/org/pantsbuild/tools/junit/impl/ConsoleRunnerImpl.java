@@ -865,8 +865,7 @@ public class ConsoleRunnerImpl {
 
       @Option(name = "-security-thread-handling",
           usage = "Choose how thread lifetimes are controlled by the security manager.")
-      private JSecMgrConfig.ThreadHandling threadHandling;
-
+      private JSecMgrConfig.ThreadHandling threadHandling = JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads;
     }
 
     Options options = new Options();
@@ -881,20 +880,12 @@ public class ConsoleRunnerImpl {
     options.defaultConcurrency = computeConcurrencyOption(options.defaultConcurrency,
         options.defaultParallel);
 
-    // NB: Buffering helps speedup output-heavy tests.
-    PrintStream out = new PrintStream(new BufferedOutputStream(System.out), true);
-    PrintStream err = new PrintStream(new BufferedOutputStream(System.err), true);
-
     JunitSecViolationReportingManager secMgr;
     if (options.useSecurityManager) {
-      JSecMgrConfig.ThreadHandling threadHandling = JSecMgrConfig.ThreadHandling.disallowDanglingTestCaseThreads;
-      if (options.threadHandling != null) {
-        threadHandling = options.threadHandling;
-      }
       JSecMgrConfig secMgrConfig = new JSecMgrConfig(
           JSecMgrConfig.SystemExitHandling.disallow,
-          threadHandling);
-      secMgr = new JunitSecViolationReportingManager(secMgrConfig, out);
+          options.threadHandling);
+      secMgr = new JunitSecViolationReportingManager(secMgrConfig);
     } else {
       secMgr = null;
     }
@@ -913,8 +904,9 @@ public class ConsoleRunnerImpl {
             options.numTestShards,
             options.numRetries,
             options.useExperimentalRunner,
-            out,
-            err,
+            // NB: Buffering helps speedup output-heavy tests.
+            new PrintStream(new BufferedOutputStream(System.out), true),
+            new PrintStream(new BufferedOutputStream(System.err), true),
             secMgr);
 
     List<String> tests = Lists.newArrayList();
@@ -931,7 +923,6 @@ public class ConsoleRunnerImpl {
         tests.add(test);
       }
     }
-
     runner.run(tests);
   }
 

@@ -17,12 +17,9 @@ public class JunitSecViolationReportingManager extends SecurityManager {
 
   private final JunitSecurityContextLookupAndErrorCollection securityLogic;
 
-  private final PrintStream out;
-
-  public JunitSecViolationReportingManager(JSecMgrConfig config, PrintStream out) {
+  public JunitSecViolationReportingManager(JSecMgrConfig config) {
     super();
     this.securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
-    this.out = out;
   }
 
   public static <T> T maybeWithSecurityManagerContext(final String className, final Callable<T> callable) throws Exception {

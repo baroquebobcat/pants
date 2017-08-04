@@ -116,7 +116,7 @@ public class ConsoleRunnerImplTest {
 
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     PrintStream quoteOriginalOut = new PrintStream(outContent, true);
-    JunitSecViolationReportingManager junitSecViolationReportingManager = new JunitSecViolationReportingManager(config, quoteOriginalOut);
+    JunitSecViolationReportingManager junitSecViolationReportingManager = new JunitSecViolationReportingManager(config);
     try {
       System.setSecurityManager(junitSecViolationReportingManager);
       return createAndRunConsoleRunner(tests, shouldFail, originalOut, outContent, quoteOriginalOut, junitSecViolationReportingManager);
