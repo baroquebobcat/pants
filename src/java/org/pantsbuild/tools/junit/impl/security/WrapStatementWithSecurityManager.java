@@ -6,12 +6,10 @@ import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
 
 public class WrapStatementWithSecurityManager extends Statement {
-  private final JunitSecViolationReportingManager junitSecViolationReportingManager;
   private final TestSecurityContext.ContextKey contextKey;
   private final Statement inner;
 
-  public WrapStatementWithSecurityManager(JunitSecViolationReportingManager junitSecViolationReportingManager, TestSecurityContext.ContextKey contextKey, Statement inner) {
-    this.junitSecViolationReportingManager = junitSecViolationReportingManager;
+  public WrapStatementWithSecurityManager(TestSecurityContext.ContextKey contextKey, Statement inner) {
     this.contextKey = contextKey;
     this.inner = inner;
   }
@@ -48,7 +46,6 @@ public class WrapStatementWithSecurityManager extends Statement {
     }
 
     return new WrapStatementWithSecurityManager(
-        junitSecViolationReportingManager,
         new TestSecurityContext.ContextKey(description.getClassName()),
         statement);
   }

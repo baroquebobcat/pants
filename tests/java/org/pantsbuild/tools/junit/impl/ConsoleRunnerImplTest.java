@@ -25,6 +25,7 @@ import org.pantsbuild.tools.junit.lib.AllFailingTest;
 import org.pantsbuild.tools.junit.lib.AllPassingTest;
 import org.pantsbuild.tools.junit.lib.ExceptionInSetupTest;
 import org.pantsbuild.tools.junit.lib.OutputModeTest;
+import org.pantsbuild.tools.junit.lib.SystemExitsInObjectBody;
 import org.pantsbuild.tools.junit.lib.security.BeforeClassSysExitTestCase;
 import org.pantsbuild.tools.junit.lib.security.SecBoundarySystemExitTests;
 import org.pantsbuild.tools.junit.lib.security.SecDanglingThreadFromTestCase;
@@ -300,14 +301,16 @@ public class ConsoleRunnerImplTest {
     ThreadStartedInBeforeClassAndNotJoinedAfterTest.latch.countDown();
   }
 
-  // TODO
-  // - Flag for per class thread lifetimes
-  // -- Allow thread that lives beyond test case
-  // -- allow thread started in before all
-  // -- ??? thread started in static context
-  // - annotation for ignoring threads started in class.
-  // test thread spawns another thread that does disallowed thing.
-  // test other class spawns thread st the test class isn't in class context of secmgr
+  @Test
+  public void testSystemExitFromBodyOfScalaObject() {
+    Class<?> testClass = SystemExitsInObjectBody.class;
+    String output = runTestsExpectingFailure(
+        new JSecMgrConfig(SystemExitHandling.disallow, ThreadHandling.disallowDanglingTestSuiteThreads),
+        testClass);
+
+    assertThat(output, containsString("failing(" + testClass.getCanonicalName() + ")"));
+  }
+
   @Test
   public void treatStaticSystemExitAsFailure() {
     // The question here is whether it should fail before running the tests. Right now it runs them,

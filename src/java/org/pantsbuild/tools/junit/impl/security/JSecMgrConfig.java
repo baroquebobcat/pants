@@ -43,11 +43,13 @@ public class JSecMgrConfig {
     // but ensure they are killed at the end of the suite.
     disallowDanglingTestSuiteThreads,
 
+    // Other possible options:
+    //
+    //nestedButDanglingDisallowed
     // Needs a better name, could be same as dangling suite mode.
     // threads started in a context, case or suite can live as long as the context does, but it's an
     // error if they live past it.
-    nestedButDanglingDisallowed
-
-    // warn on threads that continue to live
+    //
+    // a set of variants that warns instead of disallowing
   }
 }

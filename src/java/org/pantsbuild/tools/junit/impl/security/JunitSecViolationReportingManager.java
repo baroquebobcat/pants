@@ -1,7 +1,6 @@
 package org.pantsbuild.tools.junit.impl.security;
 
 import java.io.FileDescriptor;
-import java.io.PrintStream;
 import java.security.AccessController;
 import java.security.Permission;
 import java.security.PrivilegedActionException;
@@ -15,11 +14,11 @@ public class JunitSecViolationReportingManager extends SecurityManager {
 
   private static Logger logger = Logger.getLogger("pants-junit-sec-mgr");
 
-  private final JunitSecurityContextLookupAndErrorCollection securityLogic;
+  private final JunitSecurityContextLookupAndErrorCollection contextLookupAndErrorCollection;
 
   public JunitSecViolationReportingManager(JSecMgrConfig config) {
     super();
-    this.securityLogic = new JunitSecurityContextLookupAndErrorCollection(config);
+    this.contextLookupAndErrorCollection = new JunitSecurityContextLookupAndErrorCollection(config);
   }
 
   public static <T> T maybeWithSecurityManagerContext(final String className, final Callable<T> callable) throws Exception {
@@ -54,49 +53,45 @@ public class JunitSecViolationReportingManager extends SecurityManager {
   }
 
   public boolean disallowsThreadsFor(TestSecurityContext context) {
-    return securityLogic.disallowsThreadsFor(context);
+    return contextLookupAndErrorCollection.disallowsThreadsFor(context);
   }
 
   public boolean perClassThreadHandling() {
-    return securityLogic.config.getThreadHandling() == JSecMgrConfig.ThreadHandling.disallowDanglingTestSuiteThreads;
+    return contextLookupAndErrorCollection.config.getThreadHandling() == JSecMgrConfig.ThreadHandling.disallowDanglingTestSuiteThreads;
   }
 
   void startTest(TestCaseSecurityContext testSecurityContext) {
-    securityLogic.startTest(testSecurityContext);
+    contextLookupAndErrorCollection.startTest(testSecurityContext);
   }
 
   void startTest(ContextKey testSecurityContext) {
-    securityLogic.startTest(testSecurityContext);
+    contextLookupAndErrorCollection.startTest(testSecurityContext);
   }
 
   void startSuite(String className) {
-    securityLogic.startSuite(new ContextKey(className));
+    contextLookupAndErrorCollection.startSuite(new ContextKey(className));
   }
 
   private TestSecurityContext lookupContext() {
-    // hit ref, if that fails
-    // check the current thread group
-    // else
-    // walk the stack to find a matching class.
-    TestSecurityContext contextFromRef = securityLogic.getCurrentSecurityContext();
+    TestSecurityContext contextFromRef = contextLookupAndErrorCollection.getCurrentSecurityContext();
     if (contextFromRef != null) {
       log("lookupContext", "found via ref!");
       return contextFromRef;
     }
 
-    TestSecurityContext contextFromThreadGroup = securityLogic.lookupContextByThreadGroup();
+    TestSecurityContext contextFromThreadGroup = contextLookupAndErrorCollection.lookupContextByThreadGroup();
     if (contextFromThreadGroup != null) {
       log("lookupContext", "found via thread group");
       return contextFromThreadGroup;
     } else {
       log("lookupContext", " not found thread group: " + Thread.currentThread().getThreadGroup().getName());
-      log("lookupContext", " available " + securityLogic.availableClasses());
+      log("lookupContext", " available " + contextLookupAndErrorCollection.availableClasses());
     }
 
     Class[] classContext = getClassContext();
     for (Class<?> c : classContext) {
       // this will no longer match.
-      TestSecurityContext testSecurityContext = securityLogic.getContextForClassName(c.getName());
+      TestSecurityContext testSecurityContext = contextLookupAndErrorCollection.getContextForClassName(c.getName());
       if (testSecurityContext != null) {
         log("lookupContext", "found matching stack element!");
         return testSecurityContext;
@@ -110,19 +105,19 @@ public class JunitSecViolationReportingManager extends SecurityManager {
   }
 
   TestSecurityContext contextFor(String className) {
-    return securityLogic.getContextForClassName(className);
+    return contextLookupAndErrorCollection.getContextForClassName(className);
   }
 
   TestSecurityContext contextFor(String className, String methodName) {
-    return securityLogic.getContext(new ContextKey(className, methodName));
+    return contextLookupAndErrorCollection.getContext(new ContextKey(className, methodName));
   }
 
   public boolean anyHasDanglingThreads() {
-    return securityLogic.anyHasRunningThreads();
+    return contextLookupAndErrorCollection.anyHasRunningThreads();
   }
 
   void endTest() {
-    securityLogic.removeCurrentThreadSecurityContext();
+    contextLookupAndErrorCollection.removeCurrentThreadSecurityContext();
   }
 
   public void withSettings(ContextKey contextKey, Runnable runnable) {
@@ -153,7 +148,7 @@ public class JunitSecViolationReportingManager extends SecurityManager {
 
   @Override
   public Object getSecurityContext() {
-    return securityLogic.getCurrentSecurityContext();
+    return contextLookupAndErrorCollection.getCurrentSecurityContext();
   }
 
   @Override
@@ -192,14 +187,6 @@ public class JunitSecViolationReportingManager extends SecurityManager {
       TestSecurityContext context = lookupContext();
       if (context != null) {
         ex = new SecurityException("System.exit calls are not allowed. context: " + context);
-            /*"\n" +
-            "  "+ testSecurityContext.className+ "\n"+
-            "  cur thread group: "+ threadGroup+"\n"+
-            "    thrd ct: "+threadGroup.activeCount() +"\n"+
-            "  testSecurityContext thread group: "+ testSecurityContext.threadGroup+"\n"+
-            "    thrd ct: "+ testSecurityContext.threadGroup.activeCount() +"\n"
-
-        );*/
         context.addFailure(ex);
       } else {
         log("checkExit", "Couldn't find a context for disallowed system exit!");
@@ -212,7 +199,7 @@ public class JunitSecViolationReportingManager extends SecurityManager {
   }
 
   public boolean disallowSystemExit() {
-    return securityLogic.config.disallowSystemExit();
+    return contextLookupAndErrorCollection.config.disallowSystemExit();
   }
 
   @Override

@@ -155,9 +155,7 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(File file) throws IOException {
-      Preconditions.checkState(
-          closed,
-          "Capture must be closed by all users before it can be read");
+      Preconditions.checkState(closed,"Capture must be closed by all users before it can be read");
       return Files.toByteArray(file);
     }
   }
@@ -203,9 +201,7 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(ByteArrayOutputStream stream) throws IOException {
-      Preconditions.checkState(
-          closed,
-          "Capture must be closed by all users before it can be read");
+      Preconditions.checkState(closed,"Capture must be closed by all users before it can be read");
       return stream.toByteArray();
     }
   }
@@ -372,7 +368,6 @@ public class ConsoleRunnerImpl {
       wrappedRunner.run(notifier);
     }
   }
-
 
   enum OutputMode {
     ALL, FAILURE_ONLY, NONE
@@ -861,7 +856,6 @@ public class ConsoleRunnerImpl {
       @Option(name = "-use-security-manager",
           usage = "Use the security to enforce restrictions on tests.")
       private boolean useSecurityManager = false;
-
 
       @Option(name = "-security-thread-handling",
           usage = "Choose how thread lifetimes are controlled by the security manager.")
