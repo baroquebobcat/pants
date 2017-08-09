@@ -14,11 +14,6 @@ public class JSecMgrConfig {
     return systemExitHandling == SystemExitHandling.disallow;
   }
 
-  boolean disallowDanglingThread() {
-    // TODO handle other thread handling models.
-    return threadHandling != ThreadHandling.allowAll;
-  }
-
   public ThreadHandling getThreadHandling() {
     return threadHandling;
   }

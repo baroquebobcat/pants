@@ -155,7 +155,7 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(File file) throws IOException {
-      Preconditions.checkState(closed,"Capture must be closed by all users before it can be read");
+      Preconditions.checkState(closed, "Capture must be closed by all users before it can be read");
       return Files.toByteArray(file);
     }
   }
@@ -201,7 +201,7 @@ public class ConsoleRunnerImpl {
     }
 
     private byte[] read(ByteArrayOutputStream stream) throws IOException {
-      Preconditions.checkState(closed,"Capture must be closed by all users before it can be read");
+      Preconditions.checkState(closed, "Capture must be closed by all users before it can be read");
       return stream.toByteArray();
     }
   }
@@ -438,11 +438,19 @@ public class ConsoleRunnerImpl {
       throw new IllegalStateException("Failed to create output directory: " + outdir);
     }
 
-    StreamCapturingListener streamCapturingListener = addCaptureListener(core);
+    StreamCapturingListener streamCapturingListener =
+        new StreamCapturingListener(outdir, outputMode, swappableOut, swappableErr);
+    core.addListener(streamCapturingListener);
 
-    maybeAddXmlListener(core, streamCapturingListener);
+    if (xmlReport) {
+      core.addListener(new AntJunitXmlReportListener(outdir, streamCapturingListener));
+    }
 
-    core.addListener(consoleListener());
+    if (perTestTimer) {
+      core.addListener(new PerTestConsoleListener(swappableOut.getOriginal()));
+    } else {
+      core.addListener(new ConsoleListener(swappableOut.getOriginal()));
+    }
 
     ShutdownListener shutdownListener = new ShutdownListener(swappableOut.getOriginal());
     core.addListener(shutdownListener);
@@ -470,30 +478,6 @@ public class ConsoleRunnerImpl {
       Runtime.getRuntime().removeShutdownHook(unexpectedExitHook);
     }
     exit(failures == 0 ? 0 : 1);
-  }
-
-  private StreamCapturingListener addCaptureListener(JUnitCore core) {
-    StreamCapturingListener streamCapturingListener =
-        new StreamCapturingListener(outdir, outputMode, swappableOut, swappableErr);
-    core.addListener(streamCapturingListener);
-    return streamCapturingListener;
-  }
-
-  private void maybeAddXmlListener(JUnitCore core, StreamCapturingListener streamCapturingListener)
-  {
-    if (xmlReport) {
-      core.addListener(new AntJunitXmlReportListener(outdir, streamCapturingListener));
-    }
-  }
-
-  private RunListener consoleListener() {
-    RunListener listener;
-    if (perTestTimer) {
-      listener = new PerTestConsoleListener(swappableOut.getOriginal());
-    } else {
-      listener = new ConsoleListener(swappableOut.getOriginal());
-    }
-    return listener;
   }
 
   /**
