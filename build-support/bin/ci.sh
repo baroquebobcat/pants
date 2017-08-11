@@ -49,7 +49,7 @@ function usage() {
 }
 
 bootstrap_compile_args=(
-  compile.python-eval
+  lint.python-eval
   --closure
 )
 
@@ -58,7 +58,7 @@ python_unit_shard="0/1"
 python_contrib_shard="0/1"
 python_intg_shard="0/1"
 
-while getopts "hfxbkmsrjlpu:ny:ci:a" opt; do
+while getopts "hfxbkmsrjlpu:ny:ci:at" opt; do
   case ${opt} in
     h) usage ;;
     f) skip_pre_commit_checks="true" ;;
@@ -72,12 +72,12 @@ while getopts "hfxbkmsrjlpu:ny:ci:a" opt; do
     l) skip_internal_backends="true" ;;
     p) skip_python="true" ;;
     u) python_unit_shard=${OPTARG} ;;
-    a) skip_android="true" ;;
     n) skip_contrib="true" ;;
     y) python_contrib_shard=${OPTARG} ;;
     c) skip_integration="true" ;;
     i) python_intg_shard=${OPTARG} ;;
     a) skip_android="true" ;;
+    t) skip_lint="true" ;;
     *) usage "Invalid option: -${OPTARG}" ;;
   esac
 done
@@ -159,6 +159,14 @@ if [[ "${skip_sanity_checks:-false}" == "false" ]]; then
   end_travis_section
 fi
 
+if [[ "${skip_lint:-false}" == "false" ]]; then
+  start_travis_section "Lint" "Running lint checks"
+  (
+    ./pants.pex ${PANTS_ARGS[@]} lint contrib:: examples:: src:: tests:: zinc::
+  ) || die "Lint check failure"
+  end_travis_section
+fi
+
 if [[ "${skip_distribution:-false}" == "false" ]]; then
   # N.B. Defer start_travis_section to those within release.sh, since we can't nest.
   banner "Running pants distribution tests"
@@ -184,7 +192,7 @@ fi
 if [[ "${skip_internal_backends:-false}" == "false" ]]; then
   start_travis_section "BackendTests" "Running internal backend python tests"
   (
-    ./pants.pex ${PANTS_ARGS[@]} test.pytest --compile-python-eval-skip \
+    ./pants.pex ${PANTS_ARGS[@]} test.pytest \
     pants-plugins/tests/python::
   ) || die "Internal backend python test failure"
   end_travis_section
@@ -199,7 +207,6 @@ if [[ "${skip_python:-false}" == "false" ]]; then
     ./pants.pex --tag='-integration' ${PANTS_ARGS[@]} test.pytest \
       --coverage=pants \
       --test-pytest-test-shard=${python_unit_shard} \
-      --compile-python-eval-skip \
       tests/python::
   ) || die "Core python test failure"
   end_travis_section
@@ -214,7 +221,6 @@ if [[ "${skip_contrib:-false}" == "false" ]]; then
     ./pants.pex ${PANTS_ARGS[@]} --exclude-target-regexp='.*/testprojects/.*' \
     --build-ignore=$SKIP_ANDROID_PATTERN test.pytest \
     --test-pytest-test-shard=${python_contrib_shard} \
-    --compile-python-eval-skip \
     contrib:: \
   ) || die "Contrib python test failure"
   end_travis_section
@@ -227,7 +233,6 @@ if [[ "${skip_integration:-false}" == "false" ]]; then
   start_travis_section "IntegrationTests" "Running Pants Integration tests${shard_desc}"
   (
     ./pants.pex ${PANTS_ARGS[@]} --tag='+integration' test.pytest \
-      --compile-python-eval-skip \
       --test-pytest-test-shard=${python_intg_shard} \
       tests/python::
   ) || die "Pants Integration test failure"

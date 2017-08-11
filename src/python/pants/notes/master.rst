@@ -4,6 +4,287 @@ Master Pre-Releases
 This document describes ``dev`` releases which occur weekly from master, and which do
 not undergo the vetting associated with ``stable`` releases.
 
+
+1.4.0.dev7 (7/28/2017)
+----------------------
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Update to zinc 1.0.0-RC3 (#4775)
+  `Issue #355, <https://github.com/sbt/zinc/issues/355,>`_
+  `Issue #355 <https://github.com/sbt/zinc/issues/355>`_
+  `PR #4775 <https://github.com/pantsbuild/pants/pull/4775>`_
+
+* Don't require an scm for local publishes. (#4773)
+  `PR #4773 <https://github.com/pantsbuild/pants/pull/4773>`_
+
+* Simplify `argutil::ensure_arg`. (#4768)
+  `PR #4768 <https://github.com/pantsbuild/pants/pull/4768>`_
+
+* Small cleanups in the `JunitRun` codebase. (#4767)
+  `PR #4767 <https://github.com/pantsbuild/pants/pull/4767>`_
+
+* Add support for compiling thrift split across multiple files in go. (#4766)
+  `PR #4766 <https://github.com/pantsbuild/pants/pull/4766>`_
+
+
+1.4.0.dev6 (7/21/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Conditionally support multiple thrift files for go_thrift_gen (#4759)
+  `PR #4759 <https://github.com/pantsbuild/pants/pull/4759>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Introduce `dirutil.mergetree`. (#4757)
+  `PR #4757 <https://github.com/pantsbuild/pants/pull/4757>`_
+
+* Zinc 1.0.0-X20 upgrade: JVM portion (#4728)
+  `Issue #355), <https://github.com/sbt/zinc/issues/355),>`_
+  `PR #4728 <https://github.com/pantsbuild/pants/pull/4728>`_
+
+* Ensure setuptools version when running setup.py. (#4753)
+  `PR #4753 <https://github.com/pantsbuild/pants/pull/4753>`_
+
+* Kill deprecated explicit register.
+  `Commit 5583dd1 <https://github.com/pantsbuild/pants/commit/5583dd1>`_
+
+
+1.4.0.dev5 (7/14/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* ScroogeGen passes through fatal_warnings argument (#4739)
+  `PR #4739 <https://github.com/pantsbuild/pants/pull/4739>`_
+
+* Bump pex version to 1.2.8. (#4735)
+  `PR #4735 <https://github.com/pantsbuild/pants/pull/4735>`_
+
+* Deprecate the `--config-override` option. (#4715)
+  `PR #4715 <https://github.com/pantsbuild/pants/pull/4715>`_
+
+Bugfixes
+~~~~~~~~
+
+* Improve pytest result summaries. (#4747)
+  `PR #4747 <https://github.com/pantsbuild/pants/pull/4747>`_
+
+* Include passthru args in task option fingerprints. (#4745)
+  `PR #4745 <https://github.com/pantsbuild/pants/pull/4745>`_
+
+* Fingerprint a bunch of go options. (#4743)
+  `PR #4743 <https://github.com/pantsbuild/pants/pull/4743>`_
+
+* Fix rpc style in compiler_args check. (#4730)
+  `PR #4730 <https://github.com/pantsbuild/pants/pull/4730>`_
+
+* Revert "Alias `--pants-config-files` to `-c`." (#4718)
+  `PR #4718 <https://github.com/pantsbuild/pants/pull/4718>`_
+
+* Ensure that invalidation works correctly when state is reverted. (#4709)
+  `PR #4709 <https://github.com/pantsbuild/pants/pull/4709>`_
+
+* Fixup `PytestRun` error handling. (#4716)
+  `PR #4716 <https://github.com/pantsbuild/pants/pull/4716>`_
+
+* Fix option bootstrapping config application order. (#4714)
+  `PR #4714 <https://github.com/pantsbuild/pants/pull/4714>`_
+
+* Ensure that target root order is preserved (#4708)
+  `PR #4708 <https://github.com/pantsbuild/pants/pull/4708>`_
+
+Documentation Updates
+~~~~~~~~~~~~~~~~~~~~~
+
+* Remove Download Stats (#4724)
+  `Issue #716 <https://github.com/badges/shields/issues/716>`_
+  `PR #4724 <https://github.com/pantsbuild/pants/pull/4724>`_
+
+* Fix roundtrip example in JVM documentation (#4706)
+  `PR #4706 <https://github.com/pantsbuild/pants/pull/4706>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Improve transitive resolve package checking in tests. (#4738)
+  `PR #4738 <https://github.com/pantsbuild/pants/pull/4738>`_
+
+* Extract a zinc subsystem to allow for more entrypoints (#4720)
+  `PR #4720 <https://github.com/pantsbuild/pants/pull/4720>`_
+
+* Format suggested deps for easy cut & paste into BUILD file (#4711)
+  `PR #4711 <https://github.com/pantsbuild/pants/pull/4711>`_
+
+* Re-enable lint checks in CI (#4704)
+  `PR #4704 <https://github.com/pantsbuild/pants/pull/4704>`_
+
+
+1.4.0.dev4 (6/23/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Replace the `invalidate` goal with `--cache-ignore`. (#4686)
+  `PR #4686 <https://github.com/pantsbuild/pants/pull/4686>`_
+
+Bugfixes
+~~~~~~~~
+
+* Fix pythonstyle warnings and some python-eval warnings (#4698)
+  `PR #4698 <https://github.com/pantsbuild/pants/pull/4698>`_
+
+* Add debug logging to prepare_resources and junit_run and fix payload asserts (#4694)
+  `PR #4694 <https://github.com/pantsbuild/pants/pull/4694>`_
+
+* Improve safe_concurrent_creation contextmanager. (#4690)
+  `PR #4690 <https://github.com/pantsbuild/pants/pull/4690>`_
+
+* Fix pytest result summary colors. (#4685)
+  `PR #4685 <https://github.com/pantsbuild/pants/pull/4685>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Use ElementTree to parse JUnit XML files because it is much faster than minidom (#4693)
+  `PR #4693 <https://github.com/pantsbuild/pants/pull/4693>`_
+
+* Use link.checkstyle target for checkstyle integration (#4699)
+  `PR #4699 <https://github.com/pantsbuild/pants/pull/4699>`_
+
+* Stabilize sharding test. (#4687)
+  `PR #4687 <https://github.com/pantsbuild/pants/pull/4687>`_
+
+Documentation Updates
+~~~~~~~~~~~~~~~~~~~~~
+
+* Fixup explain options json output. (#4696)
+  `PR #4696 <https://github.com/pantsbuild/pants/pull/4696>`_
+
+
+1.4.0.dev3 (6/16/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Add compiler_args property to JavaThriftLibrary target.  (#4669)
+  `PR #4669 <https://github.com/pantsbuild/pants/pull/4669>`_
+
+Bugfixes
+~~~~~~~~
+
+* Add classname to target data reported by pytest (#4675)
+  `PR #4675 <https://github.com/pantsbuild/pants/pull/4675>`_
+
+* Support options fingerprinting in `Task` tests. (#4666)
+  `PR #4666 <https://github.com/pantsbuild/pants/pull/4666>`_
+
+* Simplify `UnsetBool` fingerprint encoding. (#4667)
+  `PR #4667 <https://github.com/pantsbuild/pants/pull/4667>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Remove engine.engine.Engine and add RootRule (#4679)
+  `PR #4679 <https://github.com/pantsbuild/pants/pull/4679>`_
+
+* Ensure `Task.workdir` is available when needed. (#4672)
+  `PR #4672 <https://github.com/pantsbuild/pants/pull/4672>`_
+
+* Add support for local test caching. (#4660)
+  `PR #4660 <https://github.com/pantsbuild/pants/pull/4660>`_
+
+Documentation Updates
+~~~~~~~~~~~~~~~~~~~~~
+
+* Link the HTML report image in the docs to the page describing it. (#4671)
+  `PR #4671 <https://github.com/pantsbuild/pants/pull/4671>`_
+
+* Document that the release script now requires Bash 4. (#4670)
+  `PR #4670 <https://github.com/pantsbuild/pants/pull/4670>`_
+
+
+1.4.0.dev2 (6/10/2017)
+----------------------
+
+API Changes
+~~~~~~~~~~~
+
+* Enable implicit_sources by default, and improve its docs. (#4661)
+  `PR #4661 <https://github.com/pantsbuild/pants/pull/4661>`_
+
+Refactoring, Improvements, and Tooling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Support registering product data from one task. (#4663)
+  `PR #4663 <https://github.com/pantsbuild/pants/pull/4663>`_
+
+* Expose pex invocation cmdlines. (#4659)
+  `PR #4659 <https://github.com/pantsbuild/pants/pull/4659>`_
+
+* Audit engine struct `repr` values. (#4658)
+  `PR #4658 <https://github.com/pantsbuild/pants/pull/4658>`_
+
+* Break `py.test` execution into two stages. (#4656)
+  `PR #4656 <https://github.com/pantsbuild/pants/pull/4656>`_
+
+* Skip a test that assumes the current version is a pre-release version. (#4654)
+  `PR #4654 <https://github.com/pantsbuild/pants/pull/4654>`_
+
+* Shard contrib tests. (#4650)
+  `PR #4650 <https://github.com/pantsbuild/pants/pull/4650>`_
+
+* Fix new `PytestRun` task deselction handling. (#4648)
+  `PR #4648 <https://github.com/pantsbuild/pants/pull/4648>`_
+
+* Simplify `TaskBase.invalidated`. (#4642)
+  `PR #4642 <https://github.com/pantsbuild/pants/pull/4642>`_
+
+* Eliminate obsolete OSX ci support. (#4636)
+  `PR #4636 <https://github.com/pantsbuild/pants/pull/4636>`_
+
+* Temporarily restore recursive behaviour for bundle filesets (#4630)
+  `PR #4630 <https://github.com/pantsbuild/pants/pull/4630>`_
+
+* Fix ownership check to be case-insensitive. (#4629)
+  `PR #4629 <https://github.com/pantsbuild/pants/pull/4629>`_
+
+Bugfixes
+~~~~~~~~
+
+* Support fingerprinting of `UnsetBool` options. (#4665)
+  `PR #4665 <https://github.com/pantsbuild/pants/pull/4665>`_
+
+Documentation Updates
+~~~~~~~~~~~~~~~~~~~~~
+
+* Kill dead dangling num_sources docs. (#4655)
+  `PR #4655 <https://github.com/pantsbuild/pants/pull/4655>`_
+
+* Add notes for 1.3.0, and a section explaining the daemon. (#4651)
+  `PR #4651 <https://github.com/pantsbuild/pants/pull/4651>`_
+
+* Rename and expand usage of the needs-cherrypick label (#4652)
+  `PR #4652 <https://github.com/pantsbuild/pants/pull/4652>`_
+
+* Generalize fmt msg (#4649)
+  `PR #4649 <https://github.com/pantsbuild/pants/pull/4649>`_
+
+* Fixup VersionedTarget class doc. (#4643)
+  `PR #4643 <https://github.com/pantsbuild/pants/pull/4643>`_
+
+* Fixes docs around bundle-jvm-archive. (#4637)
+  `PR #4637 <https://github.com/pantsbuild/pants/pull/4637>`_
+
+
 1.4.0.dev1 (5/26/2017)
 ----------------------
 

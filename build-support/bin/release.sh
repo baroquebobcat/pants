@@ -133,7 +133,7 @@ function publish_packages() {
     targets+=($(pkg_build_target $PACKAGE))
   done
   start_travis_section "Publishing" "Publishing packages"
-  run_local_pants setup-py --run="register sdist upload --sign --identity=$(get_pgp_keyid)" \
+  run_local_pants setup-py --run="sdist upload --sign --identity=$(get_pgp_keyid)" \
     --recursive ${targets[@]} || die "Failed to publish packages!"
   end_travis_section
 }
@@ -377,6 +377,8 @@ function check_owner() {
    for owner in $(get_owners ${package_name})
    do
      # NB: A case-insensitive comparison is done since pypi is case-insensitive wrt usernames.
+     # Note that the ^^ case operator requires bash 4.  If you're on a Mac you may need to brew
+     # install bash, as the version that comes with MacOS is ancient.
      if [[ "${username^^}" == "${owner^^}" ]]
      then
        return 0
