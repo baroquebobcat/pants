@@ -15,7 +15,7 @@ from twitter.common.collections import OrderedSet
 from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
 from pants.base.workunit import WorkUnitLabel
-from pants.build_graph.address import Address, SyntheticAddress
+from pants.build_graph.address import SyntheticAddress
 from pants.build_graph.address_lookup_error import AddressLookupError
 from pants.source.wrapped_globs import EagerFilesetWithSpec, FilesetRelPathWrapper
 from pants.task.task import Task

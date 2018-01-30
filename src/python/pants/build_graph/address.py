@@ -272,7 +272,6 @@ class SyntheticAddress(Address):
     """
     self._creator = creator
     self._original = original_address
-    rel_path = rel_path or build_file.relpath
     spec_path = os.path.dirname(rel_path)
     super(SyntheticAddress, self).__init__(spec_path=spec_path,
                                            target_name=target_name or os.path.basename(spec_path))
