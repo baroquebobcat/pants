@@ -15,7 +15,7 @@ from twitter.common.collections import OrderedSet
 from pants.base.build_environment import get_buildroot
 from pants.base.exceptions import TaskError
 from pants.base.workunit import WorkUnitLabel
-from pants.build_graph.address import Address
+from pants.build_graph.address import Address, SyntheticAddress
 from pants.build_graph.address_lookup_error import AddressLookupError
 from pants.source.wrapped_globs import EagerFilesetWithSpec, FilesetRelPathWrapper
 from pants.task.task import Task
@@ -199,7 +199,8 @@ class SimpleCodegenTask(Task):
   def _get_synthetic_address(self, target, target_workdir):
     synthetic_name = target.id
     sources_rel_path = os.path.relpath(target_workdir, get_buildroot())
-    synthetic_address = Address(sources_rel_path, synthetic_name)
+    synthetic_address = SyntheticAddress(self.options_scope,
+      target.address, sources_rel_path, synthetic_name)
     return synthetic_address
 
   def execute(self):

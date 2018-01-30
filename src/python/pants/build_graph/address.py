@@ -254,6 +254,50 @@ class Address(object):
     return (self._spec_path, self._target_name) < (other._spec_path, other._target_name)
 
 
+class SyntheticAddress(Address):
+  """Represents the address of a type materialized from a BUILD file.
+
+  :API: public
+  """
+
+  def __init__(self, creator, original_address=None, target_name=None, rel_path=None):
+    """
+    :param build_file: The build file that contains the object this address points to.
+    :type build_file: :class:`pants.base.build_file.BuildFile`
+    :param string rel_path: The BUILD files' path, relative to the root_dir.
+    :param string target_name: The name of the target within the BUILD file; defaults to the default
+                               target, aka the name of the BUILD file parent dir.
+
+    :API: public
+    """
+    self._creator = creator
+    self._original = original_address
+    rel_path = rel_path or build_file.relpath
+    spec_path = os.path.dirname(rel_path)
+    super(SyntheticAddress, self).__init__(spec_path=spec_path,
+                                           target_name=target_name or os.path.basename(spec_path))
+    self.rel_path = rel_path
+
+  def to_address(self):
+    """Convert this BuildFileAddress to an Address."""
+    return Address(spec_path=self.spec_path, target_name=self.target_name)
+
+  @property
+  def spec(self):
+    """The canonical string representation of the Address.
+
+    Prepends '//' if the target is at the root, to disambiguate root-level targets
+    from "relative" spec notation.
+
+    :API: public
+    """
+    # TODO(pl): Maybe we should just always start with // for simplicity?
+    return '${}${}:{}'.format(
+      self._creator,
+      self._original.spec_path,
+      self._original.target_name)
+
+
 class BuildFileAddress(Address):
   """Represents the address of a type materialized from a BUILD file.
 
