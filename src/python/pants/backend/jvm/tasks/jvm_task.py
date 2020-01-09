@@ -88,5 +88,5 @@ class JvmTask(Task):
   def _jvm_platforms_from_targets(self, targets):
     # Override this to change platform lookup.
     # This overriding will be eliminated in the next change.
-    return [target.platform for target in targets
+    return [target.runtime_platform for target in targets
             if isinstance(target, JvmTarget)]

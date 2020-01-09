@@ -191,7 +191,7 @@ class JUnitRun(PartitionedTestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
                              **kwargs)
 
   def _jvm_platforms_from_targets(self, targets):
-    return [target.test_platform for target in targets
+    return [target.runtime_platform for target in targets
             if isinstance(target, JUnitTests)]
 
   def _spawn(self, distribution, executor=None, *args, **kwargs):
@@ -369,7 +369,7 @@ class JUnitRun(PartitionedTestRunnerTaskMixin, JvmToolTaskMixin, JvmTask):
   def _iter_batches(self, test_registry):
     tests_by_properties = test_registry.index(
       lambda tgt: tgt.cwd if tgt.cwd is not None else self._working_dir,
-      lambda tgt: tgt.test_platform,
+      lambda tgt: tgt.runtime_platform,
       lambda tgt: tgt.payload.extra_jvm_options,
       lambda tgt: tgt.payload.extra_env_vars,
       lambda tgt: tgt.concurrency,

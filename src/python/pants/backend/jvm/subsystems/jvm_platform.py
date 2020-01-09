@@ -15,7 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 class JvmPlatform(Subsystem):
-  """Used to keep track of repo compile settings."""
+  """Used to keep track of repo compile and runtime settings for jvm targets.
+
+      platforms: {
+          "java8": {
+            # compile arguments
+            "source": "8",
+            "target": "8",
+            "args": [],
+            # runtime arguments
+            "minimum_version": "8.0",
+            "maximum_version": "8.9.999",
+          }
+      }
+  """
 
   # NB: These assume a java version number N can be specified as either 'N' or '1.N'
   # (eg, '7' is equivalent to '1.7'). Java stopped following this convention starting with Java 9,
@@ -54,6 +67,8 @@ class JvmPlatform(Subsystem):
              help='Compile settings that can be referred to by name in jvm_targets.')
     register('--default-platform', advanced=True, type=str, default=None, fingerprint=True,
              help='Name of the default platform to use if none are specified.')
+    register('--default-runtime-platform', advanced=True, type=str, default=None, fingerprint=True,
+             help='Name of the default runtime platform to use if none are specified.')
     register('--compiler', advanced=True, choices=cls._COMPILER_CHOICES, default='rsc', fingerprint=True,
              help='Java compiler implementation to use.')
 
@@ -61,10 +76,22 @@ class JvmPlatform(Subsystem):
   def subsystem_dependencies(cls):
     return super().subsystem_dependencies() + (DistributionLocator,)
 
+  @staticmethod
   def _parse_platform(self, name, platform):
-    return JvmPlatformSettings(platform.get('source', platform.get('target')),
-                               platform.get('target', platform.get('source')),
+    source = platform.get('source')
+    target = platform.get('target')
+    source = source or target
+    target = target or source
+    # maybe defaulting here makes sense. I'm not sure though.
+    min_version = platform.get('minimum_version')
+    max_version = platform.get('maximum_version')
+    max_version = max_version or target
+    min_version = min_version or target
+    return JvmPlatformSettings(source,
+                               target,
                                platform.get('args', ()),
+                               min_version,
+                               max_version,
                                name=name)
 
   @classmethod
@@ -117,6 +144,20 @@ class JvmPlatform(Subsystem):
       )
     return JvmPlatformSettings(*platforms_by_name[name], name=name, by_default=True)
 
+  @memoized_property
+  def default_runtime_platform(self):
+    name = self.get_options().default_runtime_platform
+    if not name:
+      return self.default_platform
+    platforms_by_name = self.platforms_by_name
+    if name not in platforms_by_name:
+      raise self.IllegalDefaultPlatform(
+        "The default runtime platform was set to '{0}', but no platform by that name has been "
+        "defined. Typically, this should be defined under [{1}] in pants.ini."
+          .format(name, self.options_scope)
+      )
+    return JvmPlatformSettings(*platforms_by_name[name], name=name, by_default=True)
+
   @memoized_method
   def get_platform_by_name(self, name, for_target=None):
     """Finds the platform with the given name.
@@ -148,6 +189,33 @@ class JvmPlatform(Subsystem):
       if platform:
         return platform
     return self.get_platform_by_name(target.payload.platform, target)
+
+  def get_runtime_platform_for_target(self, target):
+    """Find the runtime platform associated with this target.
+
+    :param JvmTarget target: target to query.
+    :return: The jvm platform object.
+    :rtype: JvmPlatformSettings
+    """
+    # Lookup order
+    # - target's declared runtime_platform
+    # - default runtime_platform
+    # - target's declared platform
+    # - default platform
+    target_runtime_platform = target.payload.runtime_platform
+    if not target_runtime_platform and target.is_synthetic:
+      derived_from = target.derived_from
+      platform = derived_from and getattr(derived_from, 'runtime_platform', None)
+      if platform:
+        return platform
+    if target_runtime_platform:
+      return self.get_platform_by_name(
+        target_runtime_platform,
+        target)
+    elif self.default_runtime_platform:
+      return self.default_runtime_platform
+    else:
+      return self.get_platform_for_target(target)
 
   @classmethod
   def parse_java_version(cls, version):
