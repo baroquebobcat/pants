@@ -15,21 +15,21 @@ logger = logging.getLogger(__name__)
 
 
 class JvmPlatform(Subsystem):
-  """Used to keep track of repo compile and runtime settings for jvm targets.
-
-      platforms: {
-          "java8": {
-            # compile arguments
-            "source": "8",
-            "target": "8",
-            "args": [],
-            # runtime arguments
-            "minimum_version": "8.0",
-            "maximum_version": "8.9.999",
-          }
-      }
-  """
-
+  """Used to keep track of repo compile settings."""
+  # """Used to keep track of repo compile and runtime settings for jvm targets.
+  #
+  #     platforms: {
+  #         "java8": {
+  #           # compile arguments
+  #           "source": "8",
+  #           "target": "8",
+  #           "args": [],
+  #           # runtime arguments
+  #           "minimum_version": "8.0",
+  #           "maximum_version": "8.9.999",
+  #         }
+  #     }
+  # """
   # NB: These assume a java version number N can be specified as either 'N' or '1.N'
   # (eg, '7' is equivalent to '1.7'). Java stopped following this convention starting with Java 9,
   # so this list does not go past it.
@@ -76,23 +76,21 @@ class JvmPlatform(Subsystem):
   def subsystem_dependencies(cls):
     return super().subsystem_dependencies() + (DistributionLocator,)
 
-  @staticmethod
   def _parse_platform(self, name, platform):
-    source = platform.get('source')
-    target = platform.get('target')
-    source = source or target
-    target = target or source
-    # maybe defaulting here makes sense. I'm not sure though.
-    min_version = platform.get('minimum_version')
-    max_version = platform.get('maximum_version')
-    max_version = max_version or target
-    min_version = min_version or target
-    return JvmPlatformSettings(source,
-                               target,
+    return JvmPlatformSettings(platform.get('source', platform.get('target')),
+                               platform.get('target', platform.get('source')),
                                platform.get('args', ()),
-                               min_version,
-                               max_version,
                                name=name)
+  # @staticmethod
+  # def _parse_platform(name, platform):
+  #   return JvmPlatformSettings(
+  #     platform.get('source'),
+  #     platform.get('target'),
+  #     platform.get('args', ()),
+  #     platform.get('minimum_version'),
+  #     platform.get('maximum_version'),
+  #     name=name
+  #   )
 
   @classmethod
   def preferred_jvm_distribution(cls, platforms, strict=False, jdk=False):
@@ -116,6 +114,17 @@ class JvmPlatform(Subsystem):
       minimum_version=min_version,
       maximum_version=max_version,
       jdk=jdk)
+    # min_version = max(platform.minimum_version for platform in platforms)
+    # max_version = min(platform.maximum_version for platform in platforms)
+    # # sketching here, but I think if we have max/min on platform, then strict doesn't need to exist
+    # # and I may want to update the previous change to not bother with it
+    # #max_version = Revision(*(min_version.components + [9999])) if strict else None
+    # return DistributionLocator.cached(
+    #   minimum_version=min_version,
+    #   maximum_version=max_version,
+    #   jdk=jdk,
+    #   strict=strict
+    # )
 
   @memoized_property
   def platforms_by_name(self):
@@ -263,6 +272,33 @@ class JvmPlatformSettings:
     self._by_default = by_default
     self._validate_source_target()
 
+  # def __init__(self, source_level, target_level, args, minimum_version=None, maximum_version=None,
+  #   name=None, by_default=False):
+  #   """
+  #   :param source_level: Revision object or string for the java source level.
+  #   :param target_level: Revision object or string for the java target level.
+  #   :param list args: Additional arguments to pass to the java compiler.
+  #   :param str minimum_version: Minimum version of JVM for running this platform.
+  #   :param str maximum_version: Maximum version of JVM for running this platform.
+  #   :param str name: name to identify this platform.
+  #   :param by_default: True if this value was inferred by omission of a specific platform setting.
+  #   """
+  #   source_level = source_level or target_level
+  #   target_level = target_level or source_level
+  #
+  #   # TODO we could calculate these using the + '9999' stuff instead if we need to fall back
+  #   minimum_version = minimum_version or target_level
+  #   maximum_version = maximum_version or target_level
+  #
+  #   self.source_level = JvmPlatform.parse_java_version(source_level)
+  #   self.target_level = JvmPlatform.parse_java_version(target_level)
+  #   self.args = tuple(args or ())
+  #   self.name = name
+  #   # TODO maybe coerce these from target if they don't exist?
+  #   self.minimum_version = JvmPlatform.parse_java_version(minimum_version)
+  #   self.maximum_version = JvmPlatform.parse_java_version(maximum_version)
+  #   self._by_default = by_default
+  #   self._validate_source_target()
   def _validate_source_target(self):
     if self.source_level > self.target_level:
       if self.by_default:
